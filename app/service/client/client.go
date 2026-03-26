@@ -2,20 +2,15 @@ package client
 
 import (
 	"context"
-	"sync/atomic"
 
 	"github.com/yzhlove/peids/app/config"
-	"github.com/yzhlove/peids/app/internal/medis"
 	"github.com/yzhlove/peids/app/service"
 )
 
 type client struct {
-	cfg          *config.Config
-	ctx          context.Context
-	cancel       context.CancelFunc
-	redis        medis.RedisManager
-	redisStatus  atomic.Bool
-	serviceReady atomic.Bool
+	cfg    *config.Config
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func New(cfg *config.Config) service.Service {
