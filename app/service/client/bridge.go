@@ -46,11 +46,13 @@ func (b *bridgeController) transport() {
 		_, err := io.Copy(b.redisConn, b.unixConn)
 		errCh <- err
 	}()
-	err := <-errCh
-	b.Stop()
-	if !b.SendEvent(Event{typ: EvBridgeStopped, err: err}) {
-		log.Error("bridge: write event failed! ", log.ErrWrap(err))
+
+	if err := <-errCh; err != nil {
+		log.Error("bridge: transport error: %v", log.ErrWrap(err))
 	}
+
+	b.Stop()
+	b.SendEvent(Event{typ: EvBridgeStopped})
 }
 
 func (b *bridgeController) Stop() {

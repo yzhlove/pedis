@@ -16,31 +16,46 @@ const (
 
 type Event struct {
 	typ EventType
-	err error
 	rwc io.ReadWriteCloser
 }
 
 type Eventer interface {
-	SendEvent(e Event) bool
+	SendEvent(e Event)
 }
 
 type State int
 
 const (
 	StateNoneUp State = iota
-	StateUnixUp
-	StateRedisUp
+	StateUnixUpOnly
+	StateRedisUpOnly
+	StatePreparingBridge
 	StateBridging
 )
 
-type Cmd int
+type WorkerCmdType int
 
 const (
-	CmdNone Cmd = iota
+	CmdStartHeartbeat WorkerCmdType = iota
+	CmdStopHeartbeat
+	CmdDetachForBridge
+	CmdShutdown
 )
+
+type WorkerCmd struct {
+	typ WorkerCmdType
+}
 
 type Worker interface {
 	Run()
-	Stop()
-	SendCmd(c Cmd) bool
+	SendCmd(c WorkerCmd)
 }
+
+type WorkerMode int
+
+const (
+	WorkerModeDisconnected WorkerMode = iota
+	WorkerModeConnectedIdle
+	WorkerModeHeartbeat
+	WorkerModeDetached
+)

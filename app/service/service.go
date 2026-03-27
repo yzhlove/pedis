@@ -25,10 +25,10 @@ func Run(s ...Service) error {
 
 	// 2. Start all services concurrently.
 	for _, svc := range s {
-		svc := svc
-		go func() {
-			errCh <- svc.Start()
-		}()
+		sv := svc
+		go func(sv Service) {
+			errCh <- sv.Start()
+		}(sv)
 	}
 
 	// 3. Listen for OS signals.

@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/bytedance/gopkg v0.1.4
 	github.com/jinzhu/configor v1.2.2
+	go.uber.org/dig v1.19.0
 )
 
 require (
