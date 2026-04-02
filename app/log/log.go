@@ -1,8 +1,10 @@
 package log
 
 import (
+	"context"
 	"log/slog"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -71,20 +73,34 @@ func Init(cfg *config.Config, attrs ...slog.Attr) {
 	}
 }
 
-func Info(msg string, args ...any) {
-	_log.Info(msg, args...)
+var bg = context.Background()
+
+func output(level slog.Level, msg string, attrs ...slog.Attr) {
+	if !_log.Enabled(bg, level) {
+		return
+	}
+	var pcs [1]uintptr
+	// skip: runtime.Callers, output, public wrapper (Info/Warn/Error/Debug)
+	runtime.Callers(3, pcs[:])
+	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	r.AddAttrs(attrs...)
+	_ = _log.Handler().Handle(bg, r)
 }
 
-func Warn(msg string, args ...any) {
-	_log.Warn(msg, args...)
+func Info(msg string, attrs ...slog.Attr) {
+	output(slog.LevelInfo, msg, attrs...)
 }
 
-func Error(msg string, args ...any) {
-	_log.Error(msg, args...)
+func Warn(msg string, attrs ...slog.Attr) {
+	output(slog.LevelWarn, msg, attrs...)
 }
 
-func Debug(msg string, args ...any) {
-	_log.Debug(msg, args...)
+func Error(msg string, attrs ...slog.Attr) {
+	output(slog.LevelError, msg, attrs...)
+}
+
+func Debug(msg string, attrs ...slog.Attr) {
+	output(slog.LevelDebug, msg, attrs...)
 }
 
 func ErrWrap(err error) slog.Attr {

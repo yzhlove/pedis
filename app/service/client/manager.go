@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/yzhlove/peids/app/config"
+	"github.com/yzhlove/peids/app/internal/conn"
 )
 
 type manager struct {
@@ -21,14 +22,15 @@ type manager struct {
 	detachedRedis io.ReadWriteCloser
 }
 
-func NewManager(ctx context.Context, cfg *config.Config) *manager {
+func newManager(ctx context.Context, cfg *config.Config) *manager {
 	m := &manager{
 		ctx:    ctx,
 		state:  StateNoneUp,
 		events: make(chan Event, 16),
 	}
-	m.bridge = NewBridgeController(m)
-	m.redisWork = NewRedisWork(ctx, cfg, m)
+	m.bridge = newBridgeController(m)
+	m.unixWork = newWorker(ctx, "worker-unix", cfg, m, conn.NewUnix(cfg.UnixSocket))
+	m.redisWork = newWorker(ctx, "worker-redis", cfg, m, conn.NewRedis(cfg.CliRedisHost, cfg.CliRedisPort))
 	return m
 }
 
@@ -51,7 +53,7 @@ func (m *manager) Run() {
 			m.stop()
 			return
 		case e := <-m.events:
-			m.handelEvent(e)
+			m.handleEvent(e)
 		}
 	}
 }
@@ -64,7 +66,7 @@ func (m *manager) stop() {
 	m.detachedRedis = nil
 }
 
-func (m *manager) handelEvent(e Event) {
+func (m *manager) handleEvent(e Event) {
 	switch e.typ {
 	case EvRedisConnected:
 		m.redisUp = true

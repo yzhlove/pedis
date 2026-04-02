@@ -23,7 +23,7 @@ func main() {
 	container.Provide(client.New, dig.Group("services"))
 
 	if err := container.Invoke(func(i in) error {
-		log.Init(i.Config, slog.Attr{Key: "name", Value: slog.StringValue("pedis")})
+		log.Init(i.Config, slog.Attr{Key: "app", Value: slog.StringValue("pedis")})
 		return service.Run(i.Services...)
 	}); err != nil {
 		log.Error("app start failed! ", log.ErrWrap(err))

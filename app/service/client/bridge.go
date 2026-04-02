@@ -15,7 +15,7 @@ type bridgeController struct {
 	redisConn io.ReadWriteCloser
 }
 
-func NewBridgeController(e Eventer) *bridgeController {
+func newBridgeController(e Eventer) *bridgeController {
 	return &bridgeController{
 		Eventer: e,
 	}
@@ -33,7 +33,7 @@ func (b *bridgeController) Start(u, r io.ReadWriteCloser) {
 	b.redisConn = r
 	b.Unlock()
 	go b.transport()
-	log.Info("bridge: start!")
+	log.Info("bridge: starting!")
 }
 
 func (b *bridgeController) transport() {
@@ -48,7 +48,7 @@ func (b *bridgeController) transport() {
 	}()
 
 	if err := <-errCh; err != nil {
-		log.Error("bridge: transport error: %v", log.ErrWrap(err))
+		log.Error("bridge: transport error", log.ErrWrap(err))
 	}
 
 	b.Stop()

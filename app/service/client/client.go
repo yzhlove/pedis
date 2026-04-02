@@ -26,14 +26,14 @@ func New(cfg *config.Config) service.Service {
 
 func (c *client) Init() error {
 	if c.isRunning() {
-		c.mgr = NewManager(c.ctx, c.cfg)
+		c.mgr = newManager(c.ctx, c.cfg)
 	}
 	return nil
 }
 
 func (c *client) Start() error {
 	if c.isRunning() {
-		log.Info("service: client is start! ")
+		log.Info("service: client is starting! ")
 		c.mgr.Run()
 	}
 	return nil
