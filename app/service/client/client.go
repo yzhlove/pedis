@@ -33,7 +33,7 @@ func (c *client) Init() error {
 
 func (c *client) Start() error {
 	if c.isRunning() {
-		log.Info("service: client is starting! ")
+		log.Info("service: client is starting!")
 		c.mgr.Run()
 	}
 	return nil
@@ -42,9 +42,6 @@ func (c *client) Start() error {
 func (c *client) Stop() error {
 	if c.cancel != nil {
 		c.cancel()
-	}
-	if c.isRunning() {
-		c.mgr.stop()
 	}
 	return nil
 }

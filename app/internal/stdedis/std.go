@@ -7,10 +7,10 @@ import (
 )
 
 func PING(w io.Writer) (err error) {
-	b := parse.GetBulk()
-	defer parse.FreeBulk(b)
+	b := parse.GetArrBulk()
+	defer parse.FreeArrBulk(b)
 
-	b.BuildString("PING")
+	b.BuildArray([]string{"PING"})
 	_, err = w.Write(b.ToBytes())
 	return
 }

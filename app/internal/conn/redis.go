@@ -44,13 +44,9 @@ func (r *redis) Ok() bool {
 }
 
 func (r *redis) Connect(d time.Duration) (err error) {
-	defer func() {
-		if err != nil {
-			r.conn = nil
-		}
-	}()
 	cc, err := net.DialTimeout("tcp", net.JoinHostPort(r.host, r.port), d)
 	if err != nil {
+		r.conn = nil
 		return err
 	}
 	r.conn = cc

@@ -7,8 +7,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-
-	"github.com/yzhlove/peids/app/helper"
 )
 
 var (
@@ -33,10 +31,7 @@ func (s *Status) Get() string {
 }
 
 func (s *Status) ToBytes() []byte {
-	buf := helper.Get1KBBytes()
-	defer helper.FreeBytes(buf)
-	b := bytes.NewBuffer(buf)
-	b.Reset()
+	var b bytes.Buffer
 	b.WriteByte('+')
 	b.WriteString(s.value)
 	b.WriteString(Sep)
@@ -68,10 +63,7 @@ func (e *Error) Get() string {
 }
 
 func (e *Error) ToBytes() []byte {
-	buf := helper.Get1KBBytes()
-	defer helper.FreeBytes(buf)
-	b := bytes.NewBuffer(buf)
-	b.Reset()
+	var b bytes.Buffer
 	b.WriteByte('-')
 	b.WriteString(e.value)
 	b.WriteString(Sep)
@@ -104,10 +96,7 @@ func (i *Integer) BuildString(value string) error {
 }
 
 func (i *Integer) ToBytes() []byte {
-	buf := helper.Get1KBBytes()
-	defer helper.FreeBytes(buf)
-	b := bytes.NewBuffer(buf)
-	b.Reset()
+	var b bytes.Buffer
 	b.WriteByte(':')
 	b.WriteString(strconv.FormatInt(i.value, 10))
 	b.WriteString(Sep)
@@ -152,10 +141,7 @@ func (b *Bulk) BuildString(value string) {
 }
 
 func (b *Bulk) ToBytes() []byte {
-	data := helper.Get1KBBytes()
-	defer helper.FreeBytes(data)
-	buf := bytes.NewBuffer(data)
-	buf.Reset()
+	var buf bytes.Buffer
 	buf.WriteByte('$')
 	buf.WriteString(strconv.Itoa(len(b.value)))
 	buf.WriteString(Sep)
@@ -216,10 +202,7 @@ func (a *ArrBulk) BuildArray(strs []string) {
 }
 
 func (a *ArrBulk) ToBytes() []byte {
-	data := helper.Get1KBBytes()
-	defer helper.FreeBytes(data)
-	buf := bytes.NewBuffer(data)
-	buf.Reset()
+	var buf bytes.Buffer
 	buf.WriteByte('*')
 	buf.WriteString(strconv.Itoa(len(a.value)))
 	buf.WriteString(Sep)

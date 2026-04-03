@@ -6,44 +6,41 @@ import (
 	"time"
 )
 
-type Unix struct {
+type unix struct {
 	path string
 	conn net.Conn
 }
 
 func NewUnix(path string) Connector {
-	return &Unix{
+	return &unix{
 		path: path,
 	}
 }
 
-func (u *Unix) Ok() bool {
+func (u *unix) Ok() bool {
 	return u.conn != nil
 }
 
-func (u *Unix) Connect(d time.Duration) (err error) {
-	defer func() {
-		if err != nil {
-			u.conn = nil
-		}
-	}()
+func (u *unix) Connect(d time.Duration) (err error) {
 	if _, err = os.Stat(u.path); err != nil {
+		u.conn = nil
 		return err
 	}
 	cc, err := net.DialTimeout("unix", u.path, d)
 	if err != nil {
+		u.conn = nil
 		return err
 	}
 	u.conn = cc
 	return
 }
 
-func (u *Unix) Heartbeat() error {
+func (u *unix) Heartbeat() error {
 
 	return nil
 }
 
-func (u *Unix) Detached() net.Conn {
+func (u *unix) Detached() net.Conn {
 	if u.conn == nil {
 		return nil
 	}
@@ -52,7 +49,7 @@ func (u *Unix) Detached() net.Conn {
 	return cc
 }
 
-func (u *Unix) Close() {
+func (u *unix) Close() {
 	if u.conn != nil {
 		u.conn.Close()
 		u.conn = nil

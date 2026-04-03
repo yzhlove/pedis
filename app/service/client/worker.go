@@ -5,38 +5,44 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/yzhlove/peids/app/config"
 	"github.com/yzhlove/peids/app/internal/conn"
 	"github.com/yzhlove/peids/app/log"
 )
 
+// workerEvents 持有 worker 在连接生命周期各阶段应发送的事件类型，
+// 使同一 worker 实现可同时服务 unix 和 redis 两种连接。
+type workerEvents struct {
+	connected    EventType
+	disconnected EventType
+	detached     EventType
+}
+
 type worker struct {
 	name      string
 	ctx       context.Context
-	cfg       *config.Config
 	eventer   Eventer
 	cmdCh     chan WorkerCmd
 	mode      WorkerMode
 	connector conn.Connector
+	evts      workerEvents
 }
 
-func newWorker(ctx context.Context, name string, cfg *config.Config, e Eventer, connector conn.Connector) Worker {
+func newWorker(ctx context.Context, name string, e Eventer, connector conn.Connector, evts workerEvents) Worker {
 	return &worker{
 		name:      name,
 		ctx:       ctx,
-		cfg:       cfg,
 		eventer:   e,
 		connector: connector,
+		evts:      evts,
 		cmdCh:     make(chan WorkerCmd, 16),
 	}
 }
 
-func (w *worker) Stop() {
+func (w *worker) stop() {
 	if w.connector != nil {
 		w.connector.Close()
 		w.connector = nil
 	}
-	w.mode = WorkerModeDisconnected
 }
 
 func (w *worker) Run() {
@@ -49,22 +55,22 @@ func (w *worker) Run() {
 
 	// 首先尝试连接一次
 	if err := w.tryConnect(); err != nil {
-		log.Error("worker: first connect redis failed! ", slog.String("name", w.name), log.ErrWrap(err))
+		log.Error("worker: first connect failed! ", slog.String("name", w.name), log.ErrWrap(err))
 	}
 
 	for {
 		select {
 		case <-w.ctx.Done():
-			w.Stop()
+			w.stop()
 			return
 		case cmd := <-w.cmdCh:
 			w.handleCmd(cmd)
 		case <-reconnectTicker.C:
 			if w.mode == WorkerModeDisconnected && !w.connector.Ok() {
 				if err := w.tryConnect(); err != nil {
-					log.Error("worker: connect redis failed! ", slog.String("name", w.name), log.ErrWrap(err))
+					log.Error("worker: connect failed! ", slog.String("name", w.name), log.ErrWrap(err))
 				} else {
-					log.Info("worker: connect redis success! ", slog.String("name", w.name))
+					log.Info("worker: connect success! ", slog.String("name", w.name))
 				}
 			}
 		case <-heartbeatTicker.C:
@@ -111,7 +117,7 @@ func (w *worker) closeConnWithEvent() {
 		w.connector.Close()
 	}
 	if w.mode != WorkerModeDisconnected {
-		w.eventer.SendEvent(Event{typ: EvRedisDisconnected})
+		w.eventer.SendEvent(Event{typ: w.evts.disconnected})
 	}
 	w.mode = WorkerModeDisconnected
 }
@@ -128,7 +134,7 @@ func (w *worker) tryConnect() error {
 		return err
 	}
 	w.mode = WorkerModeConnectedIdle
-	w.eventer.SendEvent(Event{typ: EvRedisConnected})
+	w.eventer.SendEvent(Event{typ: w.evts.connected})
 	return nil
 }
 
@@ -139,5 +145,5 @@ func (w *worker) detached() {
 
 	cc := w.connector.Detached()
 	w.mode = WorkerModeDetached
-	w.eventer.SendEvent(Event{typ: EvRedisConnectDetached, rwc: cc})
+	w.eventer.SendEvent(Event{typ: w.evts.detached, rwc: cc})
 }

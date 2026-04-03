@@ -29,8 +29,16 @@ func newManager(ctx context.Context, cfg *config.Config) *manager {
 		events: make(chan Event, 16),
 	}
 	m.bridge = newBridgeController(m)
-	m.unixWork = newWorker(ctx, "worker-unix", cfg, m, conn.NewUnix(cfg.UnixSocket))
-	m.redisWork = newWorker(ctx, "worker-redis", cfg, m, conn.NewRedis(cfg.CliRedisHost, cfg.CliRedisPort))
+	m.unixWork = newWorker(ctx, "worker-unix", m, conn.NewUnix(cfg.UnixSocket), workerEvents{
+		connected:    EvUnixConnected,
+		disconnected: EvUnixDisconnected,
+		detached:     EvUnixConnectDetached,
+	})
+	m.redisWork = newWorker(ctx, "worker-redis", m, conn.NewRedis(cfg.CliRedisHost, cfg.CliRedisPort), workerEvents{
+		connected:    EvRedisConnected,
+		disconnected: EvRedisDisconnected,
+		detached:     EvRedisConnectDetached,
+	})
 	return m
 }
 
@@ -38,8 +46,7 @@ func (m *manager) SendEvent(e Event) {
 	select {
 	case <-m.ctx.Done():
 		return
-	default:
-		m.events <- e
+	case m.events <- e:
 	}
 }
 
