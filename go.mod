@@ -6,6 +6,7 @@ require (
 	github.com/bytedance/gopkg v0.1.4
 	github.com/jinzhu/configor v1.2.2
 	go.uber.org/dig v1.19.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (

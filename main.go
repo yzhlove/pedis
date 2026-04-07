@@ -6,6 +6,7 @@ import (
 	"github.com/yzhlove/peids/app/config"
 	"github.com/yzhlove/peids/app/log"
 	"github.com/yzhlove/peids/app/modules"
+	"github.com/yzhlove/peids/app/modules/cipher"
 	"github.com/yzhlove/peids/app/modules/text"
 	"github.com/yzhlove/peids/app/service"
 	"github.com/yzhlove/peids/app/service/client"
@@ -25,6 +26,7 @@ func main() {
 	container.Provide(config.New)
 	container.Provide(client.New, dig.Group("services"))
 	container.Provide(text.New, dig.Group("modules"))
+	container.Provide(cipher.New, dig.Group("modules"))
 
 	if err := container.Invoke(func(i in) error {
 		log.Init(i.Config, slog.Attr{Key: "app", Value: slog.StringValue("pedis")})
