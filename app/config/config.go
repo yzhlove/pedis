@@ -12,6 +12,8 @@ const (
 type Config struct {
 	ENV              string      `default:"dev" json:"env" env:"PEDIS_ENV"`
 	Role             ServiceRole `default:"client" json:"role" env:"PEDIS_ROLE"`
+	Salt             string      `default:"" json:"salt" env:"PEDIS_SALT"`
+	Prefix           string      `default:"" json:"prefix" env:"PEDIS_PREFIX"`
 	TimeSeed         string      `default:"" json:"time_seed" env:"PEDIS_TIME_SEED"`
 	CharacterSet     string      `default:"" json:"character_set" env:"PEDIS_CHARACTER_SET"`
 	CliRedisHost     string      `default:"127.0.0.1" json:"cli_redis_host" env:"PEDIS_CLI_REDIS_HOST"`
