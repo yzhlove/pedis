@@ -4,13 +4,17 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"errors"
 	"sync/atomic"
 )
+
+var errNonceReplay = errors.New("session: nonce replay detected")
 
 // Session holds the symmetric cipher state for one established connection.
 type Session struct {
 	cipher.AEAD
-	counter atomic.Uint64
+	counter     atomic.Uint64
+	recvCounter atomic.Uint64
 }
 
 func (s *Session) buildNonce() []byte {
@@ -44,7 +48,24 @@ func (s *Session) Encrypt(plaintext, additionalData []byte) []byte {
 	return s.Seal(nonce, nonce, plaintext, additionalData)
 }
 
-// Decrypt opens a frame produced by Encrypt.
+// Decrypt opens a frame produced by Encrypt and enforces nonce monotonicity
+// to prevent replay attacks. Nonces must arrive in strictly increasing counter order.
 func (s *Session) Decrypt(ciphertext, additionalData []byte) ([]byte, error) {
-	return s.Open(nil, ciphertext[:s.NonceSize()], ciphertext[s.NonceSize():], additionalData)
+	if len(ciphertext) < s.NonceSize() {
+		return nil, errors.New("session: ciphertext too short")
+	}
+	nonce := ciphertext[:s.NonceSize()]
+	incoming := binary.BigEndian.Uint64(nonce[4:])
+
+	for {
+		last := s.recvCounter.Load()
+		if incoming < last {
+			return nil, errNonceReplay
+		}
+		if s.recvCounter.CompareAndSwap(last, incoming+1) {
+			break
+		}
+	}
+
+	return s.Open(nil, nonce, ciphertext[s.NonceSize():], additionalData)
 }

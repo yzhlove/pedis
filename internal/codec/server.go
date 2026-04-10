@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/yzhlove/pedis/internal/cipher"
@@ -23,6 +24,42 @@ var (
 	errServerVerify    = errors.New("server: verify error")
 	errServerHeartbeat = errors.New("server: heartbeat error")
 )
+
+// replayWindow is the maximum age (and future skew) accepted for Auth timestamps.
+const replayWindow = 30 * time.Second
+
+// replayCache stores recently used Auth timestamps to reject replayed messages.
+// Key: uint64 timestamp, Value: int64 expiry (UnixNano).
+var replayCache sync.Map
+
+// checkReplay returns errServerVerify if ts is outside the time window or has
+// already been used within the window (replay attack).
+func checkReplay(ts uint64) error {
+	now := time.Now()
+	reqTime := time.Unix(0, int64(ts))
+	diff := now.Sub(reqTime)
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > replayWindow {
+		return errServerVerify
+	}
+
+	expiry := now.Add(replayWindow).UnixNano()
+	if _, loaded := replayCache.LoadOrStore(ts, expiry); loaded {
+		return errServerVerify
+	}
+
+	// Lazy cleanup: evict expired entries on each new auth.
+	nowNano := now.UnixNano()
+	replayCache.Range(func(k, v any) bool {
+		if v.(int64) < nowNano {
+			replayCache.Delete(k)
+		}
+		return true
+	})
+	return nil
+}
 
 // ServerCodec encodes and decodes server-side framed messages.
 type ServerCodec interface {
@@ -124,6 +161,10 @@ func (s *serverCodec) Decode(payload []byte) (cmd Cmd, msg proto.Message, err er
 
 func (s *serverCodec) Auth(msg proto.Message) (proto.Message, error) {
 	req := msg.(*pb.Auth)
+	if err := checkReplay(req.Timestamp); err != nil {
+		return nil, err
+	}
+
 	ecdsaPub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), req.EcdsaPubKeyBytes)
 	if err != nil {
 		return nil, err
