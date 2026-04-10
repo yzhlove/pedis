@@ -4,15 +4,20 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 )
 
 var (
-	errEmptyPack = errors.New("packet: packet is empty! ")
+	errEmptyPack      = errors.New("packet: packet is empty! ")
+	errPacketTooLarge = errors.New("packet: packet too large")
 )
 
 func Pack(writer io.Writer, data []byte) error {
 	if len(data) == 0 {
 		return errEmptyPack
+	}
+	if len(data) > math.MaxUint16 {
+		return errPacketTooLarge
 	}
 
 	value := make([]byte, 2+len(data))

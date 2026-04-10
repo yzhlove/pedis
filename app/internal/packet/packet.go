@@ -2,11 +2,6 @@ package packet
 
 import (
 	"encoding/binary"
-	"fmt"
-)
-
-var (
-	errPacketTooLarge = fmt.Errorf("packet: packet too large")
 )
 
 type Packet []byte

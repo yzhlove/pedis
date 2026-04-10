@@ -120,7 +120,7 @@ func (c *client) respIke(msg proto.Message) error {
 		return err
 	}
 
-	if !ecdsa.VerifyASN1(ecdsaPub, req.DHPubKeyBytes, req.Signature) {
+	if !ecdsa.VerifyASN1(ecdsaPub, append(req.DHPubKeyBytes, req.Salt...), req.Signature) {
 		return errVerify
 	}
 

@@ -12,7 +12,7 @@ type Session struct {
 	counter atomic.Uint64
 }
 
-func (s *Session) buildNonoc() []byte {
+func (s *Session) buildNonce() []byte {
 	nonce := make([]byte, 12)
 	prefix := getPrefix()
 	nonce[0] = prefix[0]
@@ -37,7 +37,7 @@ func NewSession(key []byte) (*Session, error) {
 }
 
 func (s *Session) Encrypt(plaintext, salt []byte) []byte {
-	nonce := s.buildNonoc()
+	nonce := s.buildNonce()
 	return s.Seal(nonce, nonce, plaintext, salt)
 }
 

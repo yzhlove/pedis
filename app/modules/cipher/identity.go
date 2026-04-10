@@ -98,7 +98,7 @@ func GenerateKey(salt []byte, info string, secret ...[]byte) ([]byte, error) {
 
 	s := make([]byte, 0, sl)
 	for _, t := range secret {
-		secret = append(secret, t)
+		s = append(s, t...)
 	}
 	return hkdf.Key(sha256.New, s, salt, info, 32)
 }
