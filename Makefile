@@ -1,11 +1,16 @@
 SHELL=/bin/bash
 
 proto:
-	@echo -e "\n📦 Generating protobuf Go stubs..."
-	@protoc -I app/proto/pbfiles \
-		--go_out=paths=source_relative:app/proto/pb \
-		app/proto/pbfiles/*.proto
-	@echo "✅ Proto generation completed"
+	@echo "Generating protobuf Go stubs..."
+	@protoc -I proto \
+		--go_out=paths=source_relative:proto/pb \
+		proto/*.proto
+	@echo "Proto generation completed"
 
+build:
+	go build ./...
 
-.PHONY: proto
+test:
+	go test ./...
+
+.PHONY: proto build test

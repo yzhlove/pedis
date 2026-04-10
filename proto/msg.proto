@@ -1,0 +1,17 @@
+syntax = "proto3";
+package pb;
+option go_package = "github.com/yzhlove/pedis/proto/pb";
+
+message Auth {
+  uint64 timestamp = 1;
+  bytes  salt = 2;
+  bytes  dh_pub_key_bytes = 3;
+  bytes  signature = 4;
+  bytes  ecdsa_pub_key_bytes = 5;
+}
+
+message String {
+  string data = 1;
+}
+
+message Nil {}

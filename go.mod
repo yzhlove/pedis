@@ -1,4 +1,4 @@
-module github.com/yzhlove/peids
+module github.com/yzhlove/pedis
 
 go 1.26.1
 
