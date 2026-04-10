@@ -4,20 +4,19 @@ import (
 	"net"
 	"time"
 
+	"github.com/yzhlove/peids/app/config"
 	"github.com/yzhlove/peids/app/internal/parse"
 	"github.com/yzhlove/peids/app/internal/stdedis"
 )
 
 type redis struct {
-	host string
-	port string
+	cfg  *config.Config
 	conn net.Conn
 }
 
-func NewRedis(host, port string) Connector {
+func NewRedis(cfg *config.Config) Connector {
 	return &redis{
-		host: host,
-		port: port,
+		cfg: cfg,
 	}
 }
 
@@ -44,7 +43,7 @@ func (r *redis) Ok() bool {
 }
 
 func (r *redis) Connect(d time.Duration) (err error) {
-	cc, err := net.DialTimeout("tcp", net.JoinHostPort(r.host, r.port), d)
+	cc, err := net.DialTimeout("tcp", net.JoinHostPort(r.cfg.CliRedisHost, r.cfg.CliRedisPort), d)
 	if err != nil {
 		r.conn = nil
 		return err

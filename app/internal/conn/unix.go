@@ -4,17 +4,30 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/yzhlove/peids/app/config"
+	"github.com/yzhlove/peids/app/handle/client"
 )
 
 type unix struct {
-	path string
+	cfg  *config.Config
 	conn net.Conn
+	cli  client.Codec
 }
 
-func NewUnix(path string) Connector {
+func NewUnix(c *config.Config) Connector {
 	return &unix{
-		path: path,
+		cfg: c,
 	}
+}
+
+func (u *unix) rwTimeout(fn func() error) error {
+	if fn != nil {
+		u.conn.SetDeadline(time.Now().Add(rwTimeout))
+		defer u.conn.SetDeadline(time.Time{})
+		return fn()
+	}
+	return nil
 }
 
 func (u *unix) Ok() bool {
@@ -22,22 +35,39 @@ func (u *unix) Ok() bool {
 }
 
 func (u *unix) Connect(d time.Duration) (err error) {
-	if _, err = os.Stat(u.path); err != nil {
+	if _, err = os.Stat(u.cfg.UnixSocket); err != nil {
 		u.conn = nil
 		return err
 	}
-	cc, err := net.DialTimeout("unix", u.path, d)
+	cc, err := net.DialTimeout("unix", u.cfg.UnixSocket, d)
 	if err != nil {
 		u.conn = nil
 		return err
 	}
+
+	tc, err := client.New(u.cfg)
+	if err != nil {
+		u.conn = nil
+		return err
+	}
+
+	if err = u.rwTimeout(func() error { return client.Auth(tc, cc) }); err != nil {
+		u.conn = nil
+		return err
+	}
+
+	u.cli = tc
 	u.conn = cc
 	return
 }
 
-func (u *unix) Heartbeat() error {
-
-	return nil
+func (u *unix) Heartbeat() (err error) {
+	if err = u.rwTimeout(func() error { return client.Heartbeat(u.cli, u.conn) }); err != nil {
+		u.conn = nil
+		u.cli = nil
+		return err
+	}
+	return
 }
 
 func (u *unix) Detached() net.Conn {
@@ -46,6 +76,7 @@ func (u *unix) Detached() net.Conn {
 	}
 	cc := u.conn
 	u.conn = nil
+	u.cli = nil
 	return cc
 }
 
@@ -53,5 +84,6 @@ func (u *unix) Close() {
 	if u.conn != nil {
 		u.conn.Close()
 		u.conn = nil
+		u.cli = nil
 	}
 }

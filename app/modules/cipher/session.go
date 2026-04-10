@@ -14,7 +14,7 @@ type Session struct {
 
 func (s *Session) buildNonoc() []byte {
 	nonce := make([]byte, 12)
-	prefix := GetPrefix()
+	prefix := getPrefix()
 	nonce[0] = prefix[0]
 	nonce[1] = prefix[1]
 	nonce[2] = prefix[2]
@@ -42,5 +42,5 @@ func (s *Session) Encrypt(plaintext, salt []byte) []byte {
 }
 
 func (s *Session) Decrypt(ciphertext, salt []byte) ([]byte, error) {
-	return s.Open(nil, s.buildNonoc(), ciphertext, salt)
+	return s.Open(nil, ciphertext[:s.NonceSize()], ciphertext[s.NonceSize():], salt)
 }

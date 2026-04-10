@@ -8,7 +8,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/yzhlove/peids/app/config"
 	"github.com/yzhlove/peids/app/handle"
+	"github.com/yzhlove/peids/app/internal/packet"
 	session "github.com/yzhlove/peids/app/modules/cipher"
 	"github.com/yzhlove/peids/app/modules/text"
 	"github.com/yzhlove/peids/app/proto/pb"
@@ -16,8 +18,9 @@ import (
 )
 
 var (
-	errVerify = errors.New("client: verify failed")
-	errEcho   = errors.New("client: echo failed")
+	errVerify  = errors.New("client: verify failed")
+	errEcho    = errors.New("client: echo failed")
+	errCommand = errors.New("client: command failed")
 )
 
 type client struct {
@@ -28,22 +31,48 @@ type client struct {
 	session *session.Session
 }
 
-func NewClient() *client {
-	return &client{}
-}
-
-func (c *client) isAead() bool {
-	return c.session != nil
+func New(cfg *config.Config) (*client, error) {
+	return &client{}, nil
 }
 
 func (c *client) Encode(cmd handle.Cmd, msg proto.Message) ([]byte, error) {
 
-	return nil, nil
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	p := packet.Packet(data)
+	payload := p.Pack(uint16(cmd))
+
+	if c.session != nil {
+		payload = c.session.Encrypt(payload, nil)
+	}
+	return payload, nil
 }
 
-func (c *client) Decode(cmd handle.Cmd, payload []byte) (proto.Message, error) {
+func (c *client) Decode(cmd handle.Cmd, payload []byte) (msg proto.Message, err error) {
 
-	return nil, nil
+	if c.session != nil {
+		if payload, err = c.session.Decrypt(payload, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	p := packet.Packet(payload)
+	if handle.Cmd(p.Cmd()) != cmd {
+		return nil, errCommand
+	}
+
+	switch cmd {
+	case handle.AuthCmd:
+		msg = new(pb.Auth)
+	case handle.HeartbeatCmd:
+		msg = new(pb.String)
+	}
+
+	err = proto.Unmarshal(p.Payload(), msg)
+	return
 }
 
 func (c *client) reqIke() (proto.Message, error) {
@@ -65,7 +94,7 @@ func (c *client) reqIke() (proto.Message, error) {
 		return nil, err
 	}
 	resp.Salt = aead.Encrypt(c.defSalt, salt)
-	resp.DHPubKeyBytes = aead.Encrypt(c.defSalt, privKey.PublicKey().Bytes())
+	resp.DHPubKeyBytes = aead.Encrypt(salt, privKey.PublicKey().Bytes())
 
 	ecdsaPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -100,7 +129,12 @@ func (c *client) respIke(msg proto.Message) error {
 		return err
 	}
 
-	dhPubKeyBytes, err := aead.Decrypt(c.defSalt, req.DHPubKeyBytes)
+	salt, err := aead.Decrypt(req.Salt, c.defSalt)
+	if err != nil {
+		return err
+	}
+
+	dhPubKeyBytes, err := aead.Decrypt(salt, req.DHPubKeyBytes)
 	if err != nil {
 		return err
 	}

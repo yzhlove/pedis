@@ -84,7 +84,7 @@ func GetPrivKey() *ecdh.PrivateKey {
 	return nil
 }
 
-func GetPrefix() [4]byte {
+func getPrefix() [4]byte {
 	if _identity != nil {
 		return _identity.prefix
 	}

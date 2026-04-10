@@ -17,6 +17,7 @@ type Connector interface {
 var (
 	readTimeout  = 10 * time.Second
 	writeTimeout = 10 * time.Second
+	rwTimeout    = 15 * time.Second
 )
 
 var (
