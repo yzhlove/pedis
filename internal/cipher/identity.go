@@ -3,28 +3,29 @@ package cipher
 import (
 	"crypto/ecdh"
 	"crypto/hkdf"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
 	"errors"
-	"io"
 
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/module"
 )
 
 var (
-	errServerKey = errors.New("identity: server key is empty")
-	errClientKey = errors.New("identity: client key is empty")
+	errServerKey = errors.New("identity: server key is empty! ")
+	errClientKey = errors.New("identity: client key is empty! ")
+	errSalt      = errors.New("identity: salt is invalid! ")
 )
 
 var defaultIdentity *identity
+
+const msgINFO = "pedis-default-secret"
 
 type identity struct {
 	cfg    *config.Config
 	priv   *ecdh.PrivateKey
 	pub    *ecdh.PublicKey
-	prefix [4]byte
+	secret []byte
 }
 
 func New(cfg *config.Config) module.Module {
@@ -52,6 +53,7 @@ func (i *identity) build() (err error) {
 		if i.priv, err = ecdh.X25519().NewPrivateKey(privateKey); err != nil {
 			return err
 		}
+		return i.initSecret(i.priv.PublicKey().Bytes())
 	case config.ClientRole:
 		if len(i.cfg.ServerPublicKey) == 0 {
 			return errClientKey
@@ -63,9 +65,16 @@ func (i *identity) build() (err error) {
 		if i.pub, err = ecdh.X25519().NewPublicKey(publicKey); err != nil {
 			return err
 		}
+		return i.initSecret(publicKey)
 	}
+	return
+}
 
-	_, err = io.ReadFull(rand.Reader, i.prefix[:])
+func (i *identity) initSecret(data []byte) (err error) {
+	if len(i.cfg.Salt) == 0 || len(i.cfg.Salt) != 32 {
+		return errSalt
+	}
+	i.secret, err = GenerateKey([]byte(i.cfg.Salt), msgINFO, data)
 	return
 }
 
@@ -83,11 +92,11 @@ func GetPrivKey() *ecdh.PrivateKey {
 	return nil
 }
 
-func getPrefix() [4]byte {
+func GetSecret() []byte {
 	if defaultIdentity != nil {
-		return defaultIdentity.prefix
+		return defaultIdentity.secret
 	}
-	return [4]byte{'J', 'A', 'V', 'A'}
+	return nil
 }
 
 // GenerateKey derives a 32-byte key using HKDF-SHA256.

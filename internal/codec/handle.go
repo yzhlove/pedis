@@ -7,6 +7,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const (
+	msgNegotiate = "pedis-negotiate-message"
+	msgHandshake = "pedis-handshake-message"
+)
+
 type (
 	reqFunc  func() (proto.Message, error)
 	respFunc func(msg proto.Message) error
@@ -46,4 +51,14 @@ func Auth(c ClientCodec, conn net.Conn) error {
 func Heartbeat(c ClientCodec, conn net.Conn) error {
 	cli := c.(*clientCodec)
 	return doHandle(c, HeartbeatCmd, conn, cli.reqEcho, cli.respEcho)
+}
+
+func Hello(c ClientCodec, conn net.Conn) error {
+	cli := c.(*clientCodec)
+	return doHandle(c, HelloCmd, conn, cli.reqHello, cli.respHello)
+}
+
+func Free(c ClientCodec, conn net.Conn) error {
+	cli := c.(*clientCodec)
+	return doHandle(c, FreeCmd, conn, cli.reqFree, cli.respFree)
 }

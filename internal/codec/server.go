@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/yzhlove/pedis/internal/cipher"
-	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/packet"
 	"github.com/yzhlove/pedis/internal/text"
 	"github.com/yzhlove/pedis/proto/pb"
@@ -23,6 +22,7 @@ var (
 	errServerCommand   = errors.New("server: command error")
 	errServerVerify    = errors.New("server: verify error")
 	errServerHeartbeat = errors.New("server: heartbeat error")
+	errServerHello     = errors.New("server: hello error")
 )
 
 // replayWindow is the maximum age (and future skew) accepted for Auth timestamps.
@@ -69,55 +69,91 @@ type ServerCodec interface {
 
 // ServerHandler processes authenticated commands received by the server.
 type ServerHandler interface {
+	GetClientName() string
 	Auth(msg proto.Message) (proto.Message, error)
 	Heartbeat(msg proto.Message) (proto.Message, error)
+	Free(msg proto.Message) (proto.Message, error)
 }
 
 // Handle reads one request from conn, dispatches it, and writes the response.
-func Handle(h ServerHandler, conn net.Conn) error {
+func Handle(h ServerHandler, conn net.Conn) (bool, error) {
 	sc, ok := h.(ServerCodec)
 	if !ok {
-		return errors.New("handler must also implement ServerCodec")
+		return false, errors.New("handler must also implement ServerCodec")
 	}
 
 	payload, err := packet.Unpack(conn)
 	if err != nil {
-		return err
+		return false, err
 	}
 	cmd, msg, err := sc.Decode(payload)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	if msg, err = serverRouter(h, cmd, msg); err != nil {
-		return err
+	if ok, msg, err = serverRouter(h, cmd, msg); err != nil {
+		return false, err
 	}
 
 	if payload, err = sc.Encode(cmd, msg); err != nil {
-		return err
+		return false, err
 	}
-	return packet.Pack(conn, payload)
+	return ok, packet.Pack(conn, payload)
 }
 
-func serverRouter(h ServerHandler, cmd Cmd, msg proto.Message) (proto.Message, error) {
+func serverRouter(h ServerHandler, cmd Cmd, msg proto.Message) (ok bool, resp proto.Message, err error) {
 	switch cmd {
 	case AuthCmd:
-		return h.Auth(msg)
+		resp, err = h.Auth(msg)
 	case HeartbeatCmd:
-		return h.Heartbeat(msg)
+		resp, err = h.Heartbeat(msg)
+	case FreeCmd:
+		ok = true
+		resp, err = h.Free(msg)
+	default:
+		err = fmt.Errorf("router: unknown command: %d", cmd)
 	}
-	return nil, fmt.Errorf("router: unknown command: %d", cmd)
+	return
 }
 
 type serverCodec struct {
-	defSalt []byte
-	msgInfo string
+	secret1 []byte
+	secret2 []byte
+	salt    []byte
+	name    string
 	session *cipher.Session
 }
 
 // NewServer creates a new server-side codec.
-func NewServer(cfg *config.Config) (ServerCodec, error) {
-	return &serverCodec{}, nil
+// The bootstrap session encrypts the first RTT using the pre-derived secret
+// from cipher.GetSecret(), matching the client's bootstrap session.
+func NewServer() (ServerCodec, error) {
+	session, err := cipher.NewSession(cipher.GetSecret())
+	if err != nil {
+		return nil, err
+	}
+	return &serverCodec{session: session}, nil
+}
+
+func (s *serverCodec) GetClientName() string {
+	return s.name
+}
+
+func (s *serverCodec) encodeWithAuthCmd(cmd Cmd) error {
+	if cmd == AuthCmd {
+		if len(s.secret1) == 0 || len(s.secret2) == 0 || len(s.salt) == 0 {
+			return nil
+		}
+		key, err := cipher.GenerateKey(s.salt, msgHandshake, s.secret1, s.secret2)
+		if err != nil {
+			return err
+		}
+		if s.session, err = cipher.NewSession(key); err != nil {
+			return err
+		}
+		s.secret1, s.secret2, s.salt = nil, nil, nil
+	}
+	return nil
 }
 
 func (s *serverCodec) Encode(cmd Cmd, msg proto.Message) ([]byte, error) {
@@ -128,25 +164,21 @@ func (s *serverCodec) Encode(cmd Cmd, msg proto.Message) ([]byte, error) {
 
 	p := packet.Packet(data)
 	payload := p.Pack(uint16(cmd))
-
-	if cmd != AuthCmd {
-		payload = s.session.Encrypt(payload, nil)
-	}
-	return payload, nil
+	respData := s.session.Encrypt(payload, nil)
+	return respData, s.encodeWithAuthCmd(cmd)
 }
 
 func (s *serverCodec) Decode(payload []byte) (cmd Cmd, msg proto.Message, err error) {
-	p := packet.Packet(payload)
+	// Decrypt the full payload first, then parse the inner frame.
+	data, err := s.session.Decrypt(payload, nil)
+	if err != nil {
+		return UnknownCmd, nil, err
+	}
+
+	p := packet.Packet(data)
 	cmd = Cmd(p.Cmd())
 	if cmd == UnknownCmd {
 		return UnknownCmd, nil, errServerCommand
-	}
-
-	data := p.Payload()
-	if s.session != nil {
-		if data, err = s.session.Decrypt(p.Payload(), nil); err != nil {
-			return UnknownCmd, nil, err
-		}
 	}
 
 	switch cmd {
@@ -154,8 +186,12 @@ func (s *serverCodec) Decode(payload []byte) (cmd Cmd, msg proto.Message, err er
 		msg = new(pb.Auth)
 	case HeartbeatCmd:
 		msg = new(pb.String)
+	case HelloCmd:
+		msg = new(pb.String)
+	case FreeCmd:
+		msg = new(pb.Nil)
 	}
-	err = proto.Unmarshal(data, msg)
+	err = proto.Unmarshal(p.Payload(), msg)
 	return
 }
 
@@ -179,12 +215,12 @@ func (s *serverCodec) Auth(msg proto.Message) (proto.Message, error) {
 		return nil, err
 	}
 
-	salt, err := aead.Decrypt(req.Salt, s.defSalt)
+	cliSalt, err := aead.Decrypt(req.Salt, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	dhPubKeyBytes, err := aead.Decrypt(req.DHPubKeyBytes, salt)
+	dhPubKeyBytes, err := aead.Decrypt(req.DHPubKeyBytes, cliSalt)
 	if err != nil {
 		return nil, err
 	}
@@ -194,38 +230,40 @@ func (s *serverCodec) Auth(msg proto.Message) (proto.Message, error) {
 		return nil, err
 	}
 
-	privKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if s.secret1, err = cipher.GetPrivKey().ECDH(cliPub); err != nil {
+		return nil, err
+	}
+	key, err := cipher.GenerateKey(cliSalt, msgNegotiate, s.secret1)
 	if err != nil {
 		return nil, err
 	}
-
-	secret1, err := privKey.ECDH(cliPub)
-	if err != nil {
+	if s.session, err = cipher.NewSession(key); err != nil {
 		return nil, err
 	}
 
-	secret2, err := cipher.GetPrivKey().ECDH(cliPub)
-	if err != nil {
-		return nil, err
-	}
-
-	key, err := cipher.GenerateKey(salt, s.msgInfo, secret1, secret2)
-	if err != nil {
-		return nil, err
-	}
-
+	// Build response. Include an ephemeral DH key and ECDSA signature for
+	// response integrity; the client verifies the signature in respIKE.
 	resp := new(pb.Auth)
 	resp.Timestamp = uint64(time.Now().UnixNano())
 	if aead, err = cipher.NewSession([]byte(text.Encode(resp.Timestamp))); err != nil {
 		return nil, err
 	}
 
-	cliSalt := make([]byte, 32)
-	if _, err = rand.Read(cliSalt); err != nil {
+	privKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
 		return nil, err
 	}
-	resp.Salt = aead.Encrypt(s.defSalt, cliSalt)
-	resp.DHPubKeyBytes = aead.Encrypt(cliSalt, privKey.PublicKey().Bytes())
+
+	if s.secret2, err = privKey.ECDH(cliPub); err != nil {
+		return nil, err
+	}
+
+	s.salt = make([]byte, 32)
+	if _, err = rand.Read(s.salt); err != nil {
+		return nil, err
+	}
+	resp.Salt = aead.Encrypt(s.salt, nil)
+	resp.DHPubKeyBytes = aead.Encrypt(s.salt, privKey.PublicKey().Bytes())
 
 	ecdsaPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -238,10 +276,6 @@ func (s *serverCodec) Auth(msg proto.Message) (proto.Message, error) {
 	if resp.EcdsaPubKeyBytes, err = ecdsaPriv.PublicKey.Bytes(); err != nil {
 		return nil, err
 	}
-
-	if s.session, err = cipher.NewSession(key); err != nil {
-		return nil, err
-	}
 	return resp, nil
 }
 
@@ -251,4 +285,17 @@ func (s *serverCodec) Heartbeat(msg proto.Message) (proto.Message, error) {
 		return &pb.String{Data: "PONG"}, nil
 	}
 	return nil, errServerHeartbeat
+}
+
+func (s *serverCodec) Hello(msg proto.Message) (proto.Message, error) {
+	req := msg.(*pb.String)
+	if len(req.Data) == 0 {
+		return nil, errServerHello
+	}
+	s.name = req.Data
+	return &pb.String{Data: "OK"}, nil
+}
+
+func (s *serverCodec) Free(msg proto.Message) (proto.Message, error) {
+	return new(pb.Nil), nil
 }

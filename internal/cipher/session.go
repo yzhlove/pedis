@@ -3,12 +3,20 @@ package cipher
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sync/atomic"
 )
 
 var errNonceReplay = errors.New("session: nonce replay detected")
+
+const (
+	nonceSize       = 12 // standard GCM nonce size (NIST SP 800-38D)
+	noncePrefixLen  = 4  // random prefix within the nonce
+	nonceCounterLen = 8  // monotonic sequence counter within the nonce
+)
 
 // Session holds the symmetric cipher state for one established connection.
 type Session struct {
@@ -18,13 +26,11 @@ type Session struct {
 }
 
 func (s *Session) buildNonce() []byte {
-	nonce := make([]byte, 12)
-	prefix := getPrefix()
-	nonce[0] = prefix[0]
-	nonce[1] = prefix[1]
-	nonce[2] = prefix[2]
-	nonce[3] = prefix[3]
-	binary.BigEndian.PutUint64(nonce[4:], s.counter.Add(1)-1)
+	nonce := make([]byte, nonceSize)
+	if _, err := rand.Read(nonce[:noncePrefixLen]); err != nil {
+		panic(fmt.Errorf("session: generate nonce err:%v", err))
+	}
+	binary.BigEndian.PutUint64(nonce[noncePrefixLen:], s.counter.Add(1)-1)
 	return nonce
 }
 
@@ -51,11 +57,11 @@ func (s *Session) Encrypt(plaintext, additionalData []byte) []byte {
 // Decrypt opens a frame produced by Encrypt and enforces nonce monotonicity
 // to prevent replay attacks. Nonces must arrive in strictly increasing counter order.
 func (s *Session) Decrypt(ciphertext, additionalData []byte) ([]byte, error) {
-	if len(ciphertext) < s.NonceSize() {
+	if len(ciphertext) < nonceSize {
 		return nil, errors.New("session: ciphertext too short")
 	}
-	nonce := ciphertext[:s.NonceSize()]
-	incoming := binary.BigEndian.Uint64(nonce[4:])
+	nonce := ciphertext[:nonceSize]
+	incoming := binary.BigEndian.Uint64(nonce[noncePrefixLen:])
 
 	for {
 		last := s.recvCounter.Load()
@@ -67,5 +73,5 @@ func (s *Session) Decrypt(ciphertext, additionalData []byte) ([]byte, error) {
 		}
 	}
 
-	return s.Open(nil, nonce, ciphertext[s.NonceSize():], additionalData)
+	return s.Open(nil, nonce, ciphertext[nonceSize:], additionalData)
 }

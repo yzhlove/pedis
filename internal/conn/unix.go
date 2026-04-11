@@ -41,7 +41,7 @@ func (u *unixConn) Connect(d time.Duration) error {
 		return err
 	}
 
-	tc, err := codec.NewClient(u.cfg)
+	tc, err := codec.NewClient(u.cfg.CliName)
 	if err != nil {
 		u.conn = nil
 		return err
@@ -70,6 +70,13 @@ func (u *unixConn) Detached() net.Conn {
 	if u.conn == nil {
 		return nil
 	}
+
+	if err := u.rwTimeout(func() error { return codec.Free(u.cli, u.conn) }); err != nil {
+		u.conn = nil
+		u.cli = nil
+		return nil
+	}
+
 	cc := u.conn
 	u.conn = nil
 	u.cli = nil
