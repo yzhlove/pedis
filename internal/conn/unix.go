@@ -52,6 +52,11 @@ func (u *unixConn) Connect(d time.Duration) error {
 		return err
 	}
 
+	if err = u.rwTimeout(func() error { return codec.Hello(tc, cc) }); err != nil {
+		u.conn = nil
+		return err
+	}
+
 	u.cli = tc
 	u.conn = cc
 	return nil
