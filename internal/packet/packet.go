@@ -46,7 +46,7 @@ type Packet []byte
 
 // Cmd returns the 2-byte big-endian command code at the start of the packet.
 func (p Packet) Cmd() uint16 {
-	if len(p) > 2 {
+	if len(p) >= 2 {
 		return binary.BigEndian.Uint16(p[:2])
 	}
 	return 0
@@ -54,7 +54,7 @@ func (p Packet) Cmd() uint16 {
 
 // Payload returns the bytes after the 2-byte command prefix.
 func (p Packet) Payload() []byte {
-	if len(p) > 2 {
+	if len(p) >= 2 {
 		return p[2:]
 	}
 	return nil

@@ -99,6 +99,26 @@ func GetSecret() []byte {
 	return nil
 }
 
+// SetupTestIdentity initialises the package-level identity for unit tests.
+// It sets both the private and public key to the same key pair so that both
+// GetPrivKey() and GetPubKey() return valid values within a single process.
+// salt must be exactly 32 bytes.
+func SetupTestIdentity(priv *ecdh.PrivateKey, salt []byte) error {
+	if len(salt) != 32 {
+		return errSalt
+	}
+	secret, err := GenerateKey(salt, msgINFO, priv.PublicKey().Bytes())
+	if err != nil {
+		return err
+	}
+	defaultIdentity = &identity{
+		priv:   priv,
+		pub:    priv.PublicKey(),
+		secret: secret,
+	}
+	return nil
+}
+
 // GenerateKey derives a 32-byte key using HKDF-SHA256.
 func GenerateKey(salt []byte, info string, secrets ...[]byte) ([]byte, error) {
 	var ikm []byte
