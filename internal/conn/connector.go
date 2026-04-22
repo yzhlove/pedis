@@ -16,12 +16,6 @@ type Connector interface {
 }
 
 var (
-	readTimeout  = 10 * time.Second
-	writeTimeout = 10 * time.Second
-	rwTimeout    = 15 * time.Second
-)
-
-var (
 	errRedisHeartbeatType    = errors.New("redis: heartbeat object type error")
 	errRedisHeartbeatCommand = errors.New("redis: heartbeat command error")
 )

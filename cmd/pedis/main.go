@@ -9,6 +9,7 @@ import (
 	"github.com/yzhlove/pedis/internal/module"
 	"github.com/yzhlove/pedis/internal/service"
 	"github.com/yzhlove/pedis/internal/service/client"
+	"github.com/yzhlove/pedis/internal/service/server"
 	"github.com/yzhlove/pedis/internal/text"
 	"go.uber.org/dig"
 )
@@ -24,6 +25,7 @@ func main() {
 	container := dig.New()
 	container.Provide(config.New)
 	container.Provide(client.New, dig.Group("services"))
+	container.Provide(server.New, dig.Group("services"))
 	container.Provide(text.New, dig.Group("modules"))
 	container.Provide(cipher.New, dig.Group("modules"))
 

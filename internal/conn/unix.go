@@ -19,15 +19,6 @@ func NewUnix(c *config.Config) Connector {
 	return &unixConn{cfg: c}
 }
 
-func (u *unixConn) rwTimeout(fn func() error) error {
-	if fn == nil {
-		return nil
-	}
-	u.conn.SetDeadline(time.Now().Add(rwTimeout))
-	defer u.conn.SetDeadline(time.Time{})
-	return fn()
-}
-
 func (u *unixConn) Ok() bool { return u.conn != nil }
 
 func (u *unixConn) Connect(d time.Duration) error {
@@ -47,12 +38,12 @@ func (u *unixConn) Connect(d time.Duration) error {
 		return err
 	}
 
-	if err = u.rwTimeout(func() error { return codec.Auth(tc, cc) }); err != nil {
+	if err = config.RWConnTimeout(u.conn, func() error { return codec.Auth(tc, cc) }); err != nil {
 		u.conn = nil
 		return err
 	}
 
-	if err = u.rwTimeout(func() error { return codec.Hello(tc, cc) }); err != nil {
+	if err = config.RWConnTimeout(u.conn, func() error { return codec.Hello(tc, cc) }); err != nil {
 		u.conn = nil
 		return err
 	}
@@ -63,7 +54,7 @@ func (u *unixConn) Connect(d time.Duration) error {
 }
 
 func (u *unixConn) Heartbeat() error {
-	if err := u.rwTimeout(func() error { return codec.Heartbeat(u.cli, u.conn) }); err != nil {
+	if err := config.RWConnTimeout(u.conn, func() error { return codec.Heartbeat(u.cli, u.conn) }); err != nil {
 		u.conn = nil
 		u.cli = nil
 		return err
@@ -76,7 +67,7 @@ func (u *unixConn) Detached() net.Conn {
 		return nil
 	}
 
-	if err := u.rwTimeout(func() error { return codec.Free(u.cli, u.conn) }); err != nil {
+	if err := config.RWConnTimeout(u.conn, func() error { return codec.Free(u.cli, u.conn) }); err != nil {
 		u.conn = nil
 		u.cli = nil
 		return nil

@@ -18,24 +18,6 @@ func NewRedis(cfg *config.Config) Connector {
 	return &redisConn{cfg: cfg}
 }
 
-func (r *redisConn) readTimeout(fn func() error) error {
-	if fn == nil {
-		return nil
-	}
-	r.conn.SetReadDeadline(time.Now().Add(readTimeout))
-	defer r.conn.SetReadDeadline(time.Time{})
-	return fn()
-}
-
-func (r *redisConn) writeTimeout(fn func() error) error {
-	if fn == nil {
-		return nil
-	}
-	r.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	defer r.conn.SetWriteDeadline(time.Time{})
-	return fn()
-}
-
 func (r *redisConn) Ok() bool { return r.conn != nil }
 
 func (r *redisConn) Connect(d time.Duration) error {
@@ -55,13 +37,13 @@ func (r *redisConn) Heartbeat() (err error) {
 		}
 	}()
 
-	if err = r.writeTimeout(func() error {
+	if err = config.ReadConnTimeout(r.conn, func() error {
 		return redis.PING(r.conn)
 	}); err != nil {
 		return err
 	}
 
-	return r.readTimeout(func() error {
+	return config.WriteConnTimeout(r.conn, func() error {
 		return resp.GetObject(r.conn, func(obj resp.Object) error {
 			if obj.Type() != resp.StatusType {
 				return errRedisHeartbeatType
