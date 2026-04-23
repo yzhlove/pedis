@@ -4,19 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/yzhlove/pedis/internal/config"
+	"github.com/yzhlove/pedis/internal/helper"
 	"github.com/yzhlove/pedis/internal/log"
 	"github.com/yzhlove/pedis/internal/redis"
 	"github.com/yzhlove/pedis/internal/resp"
 )
-
-const redisAuthTimeout = 30 * time.Second
 
 var (
 	errRedisData        = errors.New("redis-server: data error")
@@ -84,9 +81,9 @@ func (s *redisServer) handleConn(conn net.Conn) {
 		return
 	}
 
-	unixConn := s.registry.Take(name)
-	if unixConn == nil {
-		log.Info("redis server: no unix client for name", slog.String("name", name))
+	unixConn, err := s.registry.Get(name)
+	if err != nil {
+		log.Info("redis server: no unix client for name", slog.String("name", name), log.ErrWrap(err))
 		if err = redis.ErrWrap(conn, fmt.Errorf("ERR no unix client connected for %s", name)); err != nil {
 			log.Error("redis server: error writing error to client", log.ErrWrap(err))
 			return
@@ -99,7 +96,9 @@ func (s *redisServer) handleConn(conn net.Conn) {
 		return
 	}
 
-	bridge(conn, unixConn)
+	if err = helper.Bridge(conn, unixConn); err != nil {
+		log.Error("redis server: bridge error", log.ErrWrap(err))
+	}
 	log.Info("redis server: bridge stopped", slog.String("name", name))
 }
 
@@ -140,20 +139,4 @@ func (s *redisServer) waitForAuth(conn net.Conn) (name string, err error) {
 		return nil
 	})
 	return
-}
-
-// bridge copies data between two connections bidirectionally until either
-// side closes. Both connections are closed before returning.
-func bridge(a, b net.Conn) {
-	defer a.Close()
-	defer b.Close()
-
-	done := make(chan struct{}, 2)
-	cp := func(dst, src net.Conn) {
-		io.Copy(dst, src)
-		done <- struct{}{}
-	}
-	go cp(a, b)
-	go cp(b, a)
-	<-done
 }

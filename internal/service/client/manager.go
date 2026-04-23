@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"io"
+	"net"
 
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/conn"
@@ -18,8 +18,8 @@ type manager struct {
 	unixUp        bool
 	redisUp       bool
 	bridging      bool
-	detachedUnix  io.ReadWriteCloser
-	detachedRedis io.ReadWriteCloser
+	detachedUnix  net.Conn
+	detachedRedis net.Conn
 }
 
 func newManager(ctx context.Context, cfg *config.Config) *manager {
@@ -82,7 +82,7 @@ func (m *manager) handleEvent(e Event) {
 		m.detachedRedis = nil
 	case RedisConnectDetached:
 		m.redisUp = false
-		m.detachedRedis = e.rwc
+		m.detachedRedis = e.conn
 	case UnixConnected:
 		m.unixUp = true
 	case UnixDisconnected:
@@ -90,7 +90,7 @@ func (m *manager) handleEvent(e Event) {
 		m.detachedUnix = nil
 	case UnixConnectDetached:
 		m.unixUp = false
-		m.detachedUnix = e.rwc
+		m.detachedUnix = e.conn
 	case BridgeStopped:
 		m.bridging = false
 		m.unixUp = false

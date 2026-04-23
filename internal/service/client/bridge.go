@@ -1,9 +1,10 @@
 package client
 
 import (
-	"io"
+	"net"
 	"sync"
 
+	"github.com/yzhlove/pedis/internal/helper"
 	"github.com/yzhlove/pedis/internal/log"
 )
 
@@ -11,15 +12,15 @@ type bridgeController struct {
 	sync.Mutex
 	Eventer
 	running   bool
-	unixConn  io.ReadWriteCloser
-	redisConn io.ReadWriteCloser
+	unixConn  net.Conn
+	redisConn net.Conn
 }
 
 func newBridgeController(e Eventer) *bridgeController {
 	return &bridgeController{Eventer: e}
 }
 
-func (b *bridgeController) Start(u, r io.ReadWriteCloser) {
+func (b *bridgeController) Start(u, r net.Conn) {
 	b.Lock()
 	if b.running {
 		b.Unlock()
@@ -35,20 +36,9 @@ func (b *bridgeController) Start(u, r io.ReadWriteCloser) {
 }
 
 func (b *bridgeController) transport() {
-	errCh := make(chan error, 2)
-	go func() {
-		_, err := io.Copy(b.unixConn, b.redisConn)
-		errCh <- err
-	}()
-	go func() {
-		_, err := io.Copy(b.redisConn, b.unixConn)
-		errCh <- err
-	}()
-
-	if err := <-errCh; err != nil {
+	if err := helper.Bridge(b.unixConn, b.redisConn); err != nil {
 		log.Error("bridge: transport error", log.ErrWrap(err))
 	}
-
 	b.Stop()
 	b.SendEvent(Event{typ: BridgeStopped})
 }

@@ -1,6 +1,6 @@
 package client
 
-import "io"
+import "net"
 
 // EventType identifies what happened on a managed connection.
 type EventType int
@@ -17,8 +17,8 @@ const (
 
 // Event carries state-change information from a worker to the manager.
 type Event struct {
-	typ EventType
-	rwc io.ReadWriteCloser
+	typ  EventType
+	conn net.Conn
 }
 
 // Eventer accepts asynchronous events.

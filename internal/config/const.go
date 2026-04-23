@@ -5,7 +5,12 @@ import (
 	"time"
 )
 
-var (
+const (
+	HeartbeatInterval = 2 * time.Minute
+	TakeTimeout       = 30 * time.Second
+)
+
+const (
 	ReadTimeout  = 10 * time.Second
 	WriteTimeout = 10 * time.Second
 	RWTimeout    = 15 * time.Second

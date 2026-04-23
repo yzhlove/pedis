@@ -6,16 +6,10 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"time"
 
 	"github.com/yzhlove/pedis/internal/codec"
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/log"
-)
-
-const (
-	unixHandshakeTimeout = 15 * time.Second
-	unixHeartbeatTimeout = 45 * time.Second // 3× client heartbeat interval
 )
 
 type unixServer struct {
@@ -87,10 +81,8 @@ func (s *unixServer) handleConn(conn net.Conn) {
 	var free bool
 	for !free {
 		if err = config.RWConnTimeout(conn, func() error {
-			if free, err = codec.Handle(srv, conn); err != nil {
-				return err
-			}
-			return nil
+			free, err = codec.Handle(srv, conn)
+			return err
 		}); err != nil {
 			log.Error("unix server: connection error", log.ErrWrap(err))
 			return

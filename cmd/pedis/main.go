@@ -14,6 +14,12 @@ import (
 	"go.uber.org/dig"
 )
 
+var (
+	buildDate  string
+	gitCommit  string
+	appVersion string
+)
+
 func main() {
 	type in struct {
 		dig.In
@@ -31,6 +37,10 @@ func main() {
 
 	if err := container.Invoke(func(i in) error {
 		log.Init(i.Config, slog.Attr{Key: "app", Value: slog.StringValue("pedis")})
+		log.Info("app start",
+			slog.String("build_date", buildDate),
+			slog.String("git_commit", gitCommit),
+			slog.String("app_version", appVersion))
 		if err := module.Apply(i.Modules...); err != nil {
 			return err
 		}

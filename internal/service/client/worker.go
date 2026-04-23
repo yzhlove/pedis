@@ -142,5 +142,5 @@ func (w *worker) detached() {
 	}
 	cc := w.connector.Detached()
 	w.mode = ModeDetached
-	w.eventer.SendEvent(Event{typ: w.evts.detached, rwc: cc})
+	w.eventer.SendEvent(Event{typ: w.evts.detached, conn: cc})
 }
