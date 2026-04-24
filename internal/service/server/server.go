@@ -45,7 +45,7 @@ func (s *serverService) Start() error {
 	if !s.isRunning() {
 		return nil
 	}
-	log.Info("service: server is starting")
+	log.Info("server-service: server is starting")
 
 	errCh := make(chan error, 2)
 	go func() { errCh <- s.unix.serve() }()

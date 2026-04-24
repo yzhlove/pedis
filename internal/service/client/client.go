@@ -2,11 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/log"
 	"github.com/yzhlove/pedis/internal/service"
 )
+
+var errClientNamaEmpty = errors.New("client-service: client name cannot be empty")
 
 type clientService struct {
 	cfg    *config.Config
@@ -27,6 +30,9 @@ func New(cfg *config.Config) service.Service {
 
 func (c *clientService) Init() error {
 	if c.isRunning() {
+		if len(c.cfg.CliName) == 0 {
+			return errClientNamaEmpty
+		}
 		c.mgr = newManager(c.ctx, c.cfg)
 	}
 	return nil
@@ -34,7 +40,7 @@ func (c *clientService) Init() error {
 
 func (c *clientService) Start() error {
 	if c.isRunning() {
-		log.Info("service: client is starting")
+		log.Info("client-service: client is starting")
 		c.mgr.Run()
 	}
 	return nil
