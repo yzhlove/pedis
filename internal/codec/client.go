@@ -163,14 +163,14 @@ func (c *clientCodec) reqAuth() (proto.Message, error) {
 	}
 	req.Salt = tsAead.Encrypt(clientSalt, nil)
 	// Encrypt the ephemeral DH public key with clientSalt as additional data
-	req.DHPubKeyBytes = tsAead.Encrypt(ephPriv.PublicKey().Bytes(), clientSalt)
+	req.DhPubKeyBytes = tsAead.Encrypt(ephPriv.PublicKey().Bytes(), clientSalt)
 
 	// Ephemeral ECDSA key pair: signs the encrypted blobs for integrity
 	ecdsaPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-	if req.Signature, err = ecdsa.SignASN1(rand.Reader, ecdsaPriv, append(req.DHPubKeyBytes, req.Salt...)); err != nil {
+	if req.Signature, err = ecdsa.SignASN1(rand.Reader, ecdsaPriv, append(req.DhPubKeyBytes, req.Salt...)); err != nil {
 		return nil, err
 	}
 	if req.EcdsaPubKeyBytes, err = ecdsaPriv.PublicKey.Bytes(); err != nil {
@@ -199,7 +199,7 @@ func (c *clientCodec) respAuth(msg proto.Message) error {
 	if err != nil {
 		return err
 	}
-	if !ecdsa.VerifyASN1(ecdsaPub, append(resp.DHPubKeyBytes, resp.Salt...), resp.Signature) {
+	if !ecdsa.VerifyASN1(ecdsaPub, append(resp.DhPubKeyBytes, resp.Salt...), resp.Signature) {
 		return errVerify
 	}
 
@@ -215,7 +215,7 @@ func (c *clientCodec) respAuth(msg proto.Message) error {
 		return err
 	}
 	// Decrypt server's ephemeral DH public key (encrypted with serverSalt as AAD)
-	serverEphPubBytes, err := tsAead.Decrypt(resp.DHPubKeyBytes, serverSalt)
+	serverEphPubBytes, err := tsAead.Decrypt(resp.DhPubKeyBytes, serverSalt)
 	if err != nil {
 		return err
 	}

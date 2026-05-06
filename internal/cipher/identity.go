@@ -4,7 +4,7 @@ import (
 	"crypto/ecdh"
 	"crypto/hkdf"
 	"crypto/sha256"
-	"encoding/base32"
+	"encoding/base64"
 	"errors"
 
 	"github.com/yzhlove/pedis/internal/config"
@@ -46,7 +46,7 @@ func (i *identity) build() (err error) {
 		if len(i.cfg.ServerPrivateKey) == 0 {
 			return errServerKey
 		}
-		privateKey, err := base32.StdEncoding.DecodeString(i.cfg.ServerPrivateKey)
+		privateKey, err := base64.StdEncoding.DecodeString(i.cfg.ServerPrivateKey)
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ func (i *identity) build() (err error) {
 		if len(i.cfg.ServerPublicKey) == 0 {
 			return errClientKey
 		}
-		publicKey, err := base32.StdEncoding.DecodeString(i.cfg.ServerPublicKey)
+		publicKey, err := base64.StdEncoding.DecodeString(i.cfg.ServerPublicKey)
 		if err != nil {
 			return err
 		}

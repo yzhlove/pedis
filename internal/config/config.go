@@ -2,26 +2,24 @@ package config
 
 import "github.com/jinzhu/configor"
 
-type ServiceRole string
-
 const (
-	ClientRole ServiceRole = "client"
-	ServerRole ServiceRole = "server"
+	ClientRole = "client"
+	ServerRole = "server"
 )
 
 type Config struct {
-	ENV              string      `default:"dev" json:"env" env:"PEDIS_ENV"`
-	Role             ServiceRole `default:"client" json:"role" env:"PEDIS_ROLE"`
-	Salt             string      `default:"iQ15j4%dME]6j.eY^}f%.>vGm:%i7z#Y" json:"salt" env:"PEDIS_SALT"`
-	TimeSeed         string      `default:"1777018079" json:"time_seed" env:"PEDIS_TIME_SEED"`
-	CharacterSet     string      `default:"" json:"character_set" env:"PEDIS_CHARACTER_SET"`
-	CliRedisHost     string      `default:"127.0.0.1" json:"cli_redis_host" env:"PEDIS_CLI_REDIS_HOST"`
-	CliRedisPort     string      `default:"6379" json:"cli_redis_port" env:"PEDIS_CLI_REDIS_PORT"`
-	CliName          string      `default:"" json:"cli_name" env:"PEDIS_CLI_NAME"`
-	UnixSocket       string      `default:"/tmp/pedis.sock" json:"unix_socket" env:"PEDIS_UNIX_SOCKET"`
-	ServerPort       string      `default:"6399" json:"server_port" env:"PEDIS_SERVER_PORT"`
-	ServerPublicKey  string      `default:"" json:"server_public_key" env:"PEDIS_SERVER_PUBLIC_KEY"`
-	ServerPrivateKey string      `default:"" json:"server_private_key" env:"PEDIS_SERVER_PRIVATE_KEY"`
+	ENV              string `default:"dev" json:"env" env:"PEDIS_ENV"`
+	Role             string `default:"" json:"role" env:"PEDIS_ROLE"`
+	Salt             string `default:"iQ15j4%dME]6j.eY^}f%.>vGm:%i7z#Y" json:"salt" env:"PEDIS_SALT"`
+	TimeSeed         string `default:"1777018079" json:"time_seed" env:"PEDIS_TIME_SEED"`
+	CharacterSet     string `default:"" json:"character_set" env:"PEDIS_CHARACTER_SET"`
+	CliRedisHost     string `default:"127.0.0.1" json:"cli_redis_host" env:"PEDIS_CLI_REDIS_HOST"`
+	CliRedisPort     string `default:"6379" json:"cli_redis_port" env:"PEDIS_CLI_REDIS_PORT"`
+	CliName          string `default:"" json:"cli_name" env:"PEDIS_CLI_NAME"`
+	UnixSocket       string `default:"/tmp/pedis.sock" json:"unix_socket" env:"PEDIS_UNIX_SOCKET"`
+	ServerPort       string `default:"6399" json:"server_port" env:"PEDIS_SERVER_PORT"`
+	ServerPublicKey  string `default:"" json:"server_public_key" env:"PEDIS_SERVER_PUBLIC_KEY"`
+	ServerPrivateKey string `default:"" json:"server_private_key" env:"PEDIS_SERVER_PRIVATE_KEY"`
 }
 
 func New() (*Config, error) {

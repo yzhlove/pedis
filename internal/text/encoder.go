@@ -13,10 +13,10 @@ import (
 //   rows 0–71  : 72 个编码行，每行是基础字符集的一种随机排列
 //   row  72    : 索引行，将行号 (0–71) 映射为单个字符
 //
-// 编码后字符串共 13 个字符：
-//   11 位 data   — uint64 的 base-72 表示，经选定行映射
-//    1 位 chk    — 所有 data digit 的 XOR 校验，经同一行映射
-//    1 位 index  — 行号经第 72 行映射得到的字符，插入位置 = row % 13
+// 编码后字符串共 13 个字符（位置固定）：
+//   位 0–10 : data  — uint64 的 base-72 表示，经选定行映射
+//   位 11   : chk   — 所有 data digit 的 XOR 校验，经同一行映射
+//   位 12   : index — 行号经第 72 行映射得到的字符（固定末位）
 
 const (
 	bookLen    = 72
@@ -110,25 +110,12 @@ func (e *encoder) encode(val uint64) string {
 	}
 	chk %= bookLen
 
-	var encoded [dataDigits + 1]byte
-	for i, d := range digits {
-		encoded[i] = e.table[row][d]
-	}
-	encoded[dataDigits] = e.table[row][chk]
-
-	indexChar := e.table[bookLen][row]
-	pos := row % strLen
-
 	out := make([]byte, strLen)
-	j := 0
-	for i := range out {
-		if i == pos {
-			out[i] = indexChar
-		} else {
-			out[i] = encoded[j]
-			j++
-		}
+	for i, d := range digits {
+		out[i] = e.table[row][d]
 	}
+	out[dataDigits] = e.table[row][chk]
+	out[dataDigits+1] = e.table[bookLen][row]
 	return string(out)
 }
 
@@ -141,38 +128,26 @@ func (e *encoder) decode(s string) (uint64, error) {
 	}
 	bs := []byte(s)
 
+	indexChar := bs[strLen-1]
 	for r := range bookLen {
-		pos := r % strLen
-		if bs[pos] != e.table[bookLen][r] {
-			continue
-		}
-		if val, err := e.tryRow(bs, r, pos); err == nil {
-			return val, nil
+		if e.table[bookLen][r] == indexChar {
+			return e.tryRow(bs, r)
 		}
 	}
 	return 0, errInvalidString
 }
 
-func (e *encoder) tryRow(bs []byte, row, indexPos int) (uint64, error) {
-	var encoded [dataDigits + 1]byte
-	j := 0
-	for i, c := range bs {
-		if i != indexPos {
-			encoded[j] = c
-			j++
-		}
-	}
-
+func (e *encoder) tryRow(bs []byte, row int) (uint64, error) {
 	var digits [dataDigits]byte
 	for i := range dataDigits {
-		v := e.inverse[row][encoded[i]]
+		v := e.inverse[row][bs[i]]
 		if v < 0 {
 			return 0, errInvalidString
 		}
 		digits[i] = byte(v)
 	}
 
-	chkIdx := e.inverse[row][encoded[dataDigits]]
+	chkIdx := e.inverse[row][bs[dataDigits]]
 	if chkIdx < 0 {
 		return 0, errInvalidString
 	}

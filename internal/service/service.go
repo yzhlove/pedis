@@ -28,14 +28,15 @@ func Run(s ...Service) error {
 	for _, svc := range s {
 		sv := svc
 		go func(sv Service) {
-			errCh <- sv.Start()
+			if err := sv.Start(); err != nil {
+				errCh <- err
+			}
 		}(sv)
 	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer signal.Stop(sigCh)
-
 	select {
 	case err := <-errCh:
 		return errors.Join(err, stopAll(s))

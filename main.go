@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/yzhlove/pedis/internal/cipher"
@@ -16,7 +17,7 @@ import (
 
 var (
 	buildDate  string
-	gitCommit  string
+	goVersion  string
 	appVersion string
 )
 
@@ -39,10 +40,10 @@ func main() {
 		log.Init(i.Config, slog.Attr{Key: "app", Value: slog.StringValue("pedis")})
 		log.Info("app start",
 			slog.String("build_date", buildDate),
-			slog.String("git_commit", gitCommit),
+			slog.String("go_version", goVersion),
 			slog.String("app_version", appVersion))
 		if err := module.Apply(i.Modules...); err != nil {
-			return err
+			return fmt.Errorf("module: apply error: %v", err)
 		}
 		return service.Run(i.Services...)
 	}); err != nil {
