@@ -94,6 +94,6 @@ func (s *unixServer) handleConn(conn net.Conn) {
 		log.Error("unix server: empty client name")
 		return
 	}
-	log.Info("unix server: client hello", slog.String("name", name))
+	log.Info("unix server: registry redis client", slog.String("name", name))
 	s.registry.Register(name, conn)
 }

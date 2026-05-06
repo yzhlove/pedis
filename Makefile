@@ -1,30 +1,31 @@
 SHELL=/bin/bash
 
 # Application Configuration
-App:=pedis
-Timezone:=Asia/Shanghai
-Tags:=develop
-Dockerfile:=Dockerfile
-Network:=mynet
-ServerPort:=6399
-UnixContainerDir:=/tmp
-UnixLocalDir:=/tmp
-UnixSocket:=$(UnixContainerDir)/pedis.sock
-Env:=dev
-ClientName:=yurisa
+App        := pedis
+Timezone   := Asia/Shanghai
+Tags       := develop
+Dockerfile := Dockerfile
+Network    := mynet
+ServerPort := 6399
+UnixContainerDir := /tmp
+UnixLocalDir     := /tmp
+UnixSocket := $(UnixContainerDir)/pedis.sock
+Env        := dev
+ClientName := yurisa
 
 # Repo root directory (works regardless of where `make` is invoked from)
-RepoRoot:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+RepoRoot := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 # Build flags with embedded metadata
-BuildDate:=$(shell date '+%F_%T')
-GitCommit:=$(shell git describe --tags --always --dirty=-dev)
-GoVersion:=$(shell go version | cut -d' ' -f3)
-AppVersion:=$(GitCommit)
+BuildDate  := $(shell date '+%F_%T')
+GitCommit  := $(shell git describe --tags --always --dirty=-dev)
+GoVersion  := $(shell go version | cut -d' ' -f3)
+AppVersion := $(GitCommit)
+HostArch   := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
-Flags:="-X main.buildDate=$(BuildDate) -X main.goVersion=$(GoVersion) -X main.appVersion=$(AppVersion)"
+Flags := -X main.buildDate=$(BuildDate) -X main.goVersion=$(GoVersion) -X main.appVersion=$(AppVersion)
 
-ClientCmd:--rm=true -it \
+ClientCmd := --rm=true -it \
 	--network=$(Network) \
 	--name=$(App)-client \
 	-h $(App)-client \
@@ -32,74 +33,105 @@ ClientCmd:--rm=true -it \
 	-e PEDIS_ENV=$(Env) \
 	-e PEDIS_ROLE=client \
 	-e PEDIS_CLI_NAME=$(ClientName) \
+	-e PEDIS_CLI_REDIS_HOST=redis \
+	-e PEDIS_CLI_REDIS_PORT=6379 \
 	-e PEDIS_UNIX_SOCKET=$(UnixSocket) \
 	-v $(UnixContainerDir):$(UnixLocalDir)
 
-ServerCmd:=--rm=true -it \
+ServerCmd := --rm=true -it \
 	--network=$(Network) \
-    --name=$(App)-server \
-    -h $(App)-server \
-    -e TZ=$(Timezone) \
-    -e PEDIS_ENV=$(Env) \
-    -e PEDIS_ROLE=server \
-    -e PEDIS_SERVER_PORT=$(ServerPort) \
-    -e PEDIS_UNIX_SOCKET=$(UnixSocket) \
-    -v $(UnixContainerDir):$(UnixLocalDir)
+	--name=$(App)-server \
+	-h $(App)-server \
+	-e TZ=$(Timezone) \
+	-e PEDIS_ENV=$(Env) \
+	-e PEDIS_ROLE=server \
+	-e PEDIS_SERVER_PORT=$(ServerPort) \
+	-e PEDIS_UNIX_SOCKET=$(UnixSocket) \
+	-p $(ServerPort):$(ServerPort) \
+	-v $(UnixContainerDir):$(UnixLocalDir)
 
 # Build targets
+
+## build: Cross-compile binary and build Docker image for linux/HOSTARCH
 build:
-	@ echo -e "\n🔨 Building $(App) application..."
-	@ echo "   Build Date: $(BuildDate)"
-	@ echo "   Git Commit: $(GitCommit)"
-	@ echo "   Go Version: $(GoVersion)"
-	@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags $(Tags) -o $(App) -ldflags $(Flags) .
-	@ echo -e "\n🐳 Building Docker image..."
-	@ docker rmi $(App) 2>/dev/null || true
-	@ docker build --platform linux/arm64 --no-cache -t $(App) -f $(Dockerfile) .
-	@ rm -f $(App)
-	@ echo "✅ Build completed successfully!"
+	@echo -e "\n🔨 Building $(App) application..."
+	@echo "   Build Date: $(BuildDate)"
+	@echo "   Git Commit: $(GitCommit)"
+	@echo "   Go Version: $(GoVersion)"
+	@echo "   Target Arch: $(HostArch)"
+	@CGO_ENABLED=0 GOOS=linux GOARCH=$(HostArch) go build -tags $(Tags) -o $(App) -ldflags '$(Flags)' .
+	@echo -e "\n🐳 Building Docker image..."
+	@docker rmi $(App) 2>/dev/null || true
+	@docker build --platform linux/$(HostArch) --no-cache -t $(App) -f $(Dockerfile) .
+	@rm -f $(App)
+	@echo "✅ Build completed successfully!"
 
-start-s:
-	@ echo -e "\n🚀 Starting $(App)-server container..."
-	@ echo -e "docker run $(ServerCmd) $(App)"
-	@ docker run $(ServerCmd) $(App)
+## build-local: Build native binary for local development
+build-local:
+	@echo -e "\n🔨 Building $(App) locally..."
+	@go build -tags $(Tags) -o $(App) -ldflags '$(Flags)' .
+	@echo "✅ Local build completed: ./$(App)"
 
-start-c:
-	@ echo -e "\n🚀 Starting $(App)-client container..."
-	@ docker run $(ClientCmd) $(App)
+## run: Run the application with go run
+run:
+	@go run -tags $(Tags) .
 
+## test: Run all tests
+test:
+	@echo -e "\n🧪 Running tests..."
+	@go test -v ./...
+	@echo "✅ Tests completed!"
+
+## lint: Run golangci-lint
+lint:
+	@golangci-lint run
+
+## network: Create Docker bridge network
+network:
+	@docker network inspect $(Network) >/dev/null 2>&1 || \
+		(echo "Creating network $(Network)..." && docker network create $(Network))
+
+## start-s: Start server container (creates network if missing)
+start-s: network
+	@echo -e "\n🚀 Starting $(App)-server container..."
+	@docker run $(ServerCmd) $(App)
+
+## start-c: Start client container (creates network if missing)
+start-c: network
+	@echo -e "\n🚀 Starting $(App)-client container..."
+	@docker run $(ClientCmd) $(App)
+
+## stop: Stop running containers
 stop:
-	@ echo -e "\n🛑 Stopping $(App) containers..."
+	@echo -e "\n🛑 Stopping $(App) containers..."
+	@docker stop $(App)-server $(App)-client 2>/dev/null || true
 
+## clean: Remove binary, Docker image, and network
 clean:
-	@ echo -e "\n🧹 Cleaning up..."
-	@ docker rmi $(App) 2>/dev/null || true
-	@ docker network rm $(Network) 2>/dev/null || true
-	@ rm -f $(App)
-	@ echo "✅ Cleanup completed!"
+	@echo -e "\n🧹 Cleaning up..."
+	@docker rmi $(App) 2>/dev/null || true
+	@docker network rm $(Network) 2>/dev/null || true
+	@rm -f $(App)
+	@echo "✅ Cleanup completed!"
 
+## proto: Regenerate protobuf Go stubs
 proto:
-	@ echo -e "\n📦 Generating protobuf Go stubs..."
-	@ protoc -I proto \
+	@echo -e "\n📦 Generating protobuf Go stubs..."
+	@protoc -I proto \
 		--go_out=paths=source_relative:proto/pb \
 		proto/*.proto
-	@ echo "✅ Proto generation completed"
+	@echo "✅ Proto generation completed"
 
+## help: Show this help message
 help:
-	@ echo -e "\n📖 Available targets:"
-	@ echo "  build         - Build cross-compiled binary and Docker image"
-	@ echo "  build-local   - Build local binary for development"
-	@ echo "  run           - Run the application with go run"
-	@ echo "  test          - Run all tests"
-	@ echo "  stop          - Stop running container"
-	@ echo "  clean         - Stop container and clean up resources"
-	@ echo "  proto         - Regenerate protobuf Go stubs"
-	@ echo "  help          - Show this help message"
-	@ echo ""
-	@ echo "📋 Configuration:"
-	@ echo "  Server Port:  $(ServerPort)"
-	@ echo "  Unix Socket:  $(UnixSocket)"
-	@ echo "  Network:      $(Network)"
-	@ echo ""
+	@echo -e "\n📖 Available targets:"
+	@grep -E '^## ' Makefile | sed 's/## /  /'
+	@echo ""
+	@echo "📋 Configuration:"
+	@echo "  Server Port:  $(ServerPort)"
+	@echo "  Unix Socket:  $(UnixSocket)"
+	@echo "  Network:      $(Network)"
+	@echo "  Target Arch:  $(HostArch)"
+	@echo ""
 
-.PHONY: build build-local run test stop clean proto help
+.PHONY: build build-local run test lint network start-s start-c stop clean proto help

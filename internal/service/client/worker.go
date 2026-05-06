@@ -47,10 +47,10 @@ func (w *worker) stop() {
 }
 
 func (w *worker) Run() {
-	reconnectTicker := time.NewTicker(time.Second * 45)
+	reconnectTicker := time.NewTicker(time.Second * 16)
 	defer reconnectTicker.Stop()
 
-	heartbeatTicker := time.NewTicker(time.Second * 15)
+	heartbeatTicker := time.NewTicker(time.Second * 5)
 	defer heartbeatTicker.Stop()
 
 	if err := w.tryConnect(); err != nil {

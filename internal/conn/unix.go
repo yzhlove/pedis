@@ -21,30 +21,32 @@ func NewUnix(c *config.Config) Connector {
 
 func (u *unixConn) Ok() bool { return u.conn != nil }
 
-func (u *unixConn) Connect(d time.Duration) error {
-	if _, err := os.Stat(u.cfg.UnixSocket); err != nil {
-		u.conn = nil
+func (u *unixConn) Connect(d time.Duration) (err error) {
+	defer func() {
+		if err != nil {
+			u.conn = nil
+			u.cli = nil
+		}
+	}()
+
+	if _, err = os.Stat(u.cfg.UnixSocket); err != nil {
 		return err
 	}
 	cc, err := net.DialTimeout("unix", u.cfg.UnixSocket, d)
 	if err != nil {
-		u.conn = nil
 		return err
 	}
 
 	tc, err := codec.NewClient(u.cfg.CliName)
 	if err != nil {
-		u.conn = nil
 		return err
 	}
 
-	if err = config.RWConnTimeout(u.conn, func() error { return codec.Auth(tc, cc) }); err != nil {
-		u.conn = nil
+	if err = config.RWConnTimeout(cc, func() error { return codec.Auth(tc, cc) }); err != nil {
 		return err
 	}
 
-	if err = config.RWConnTimeout(u.conn, func() error { return codec.Hello(tc, cc) }); err != nil {
-		u.conn = nil
+	if err = config.RWConnTimeout(cc, func() error { return codec.Hello(tc, cc) }); err != nil {
 		return err
 	}
 

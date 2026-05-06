@@ -80,7 +80,6 @@ func (s *redisServer) handleConn(conn net.Conn) {
 		log.Error("redis server: auth phase error", log.ErrWrap(err))
 		return
 	}
-
 	unixConn, err := s.registry.Get(name)
 	if err != nil {
 		log.Info("redis server: no unix client for name", slog.String("name", name), log.ErrWrap(err))
@@ -90,12 +89,10 @@ func (s *redisServer) handleConn(conn net.Conn) {
 		}
 		return
 	}
-
 	if err = redis.OK(conn); err != nil {
 		log.Error("redis server: error writing ok to client", log.ErrWrap(err))
 		return
 	}
-
 	if err = helper.Bridge(conn, unixConn); err != nil {
 		log.Error("redis server: bridge error", log.ErrWrap(err))
 	}
