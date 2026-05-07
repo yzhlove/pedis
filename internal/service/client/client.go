@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/log"
@@ -15,7 +16,7 @@ type clientService struct {
 	cfg    *config.Config
 	ctx    context.Context
 	cancel context.CancelFunc
-	mgr    *manager
+	mgr    []*manager
 }
 
 // New creates a client Service for the given config.
@@ -33,7 +34,9 @@ func (c *clientService) Init() error {
 		if len(c.cfg.CliName) == 0 {
 			return errClientNamaEmpty
 		}
-		c.mgr = newManager(c.ctx, c.cfg)
+		for range config.MaxClientConns {
+			c.mgr = append(c.mgr, newManager(c.ctx, c.cfg))
+		}
 	}
 	return nil
 }
@@ -41,7 +44,15 @@ func (c *clientService) Init() error {
 func (c *clientService) Start() error {
 	if c.isRunning() {
 		log.Info("client-service: client is starting")
-		c.mgr.Run()
+		var wg sync.WaitGroup
+		for _, m := range c.mgr {
+			wg.Add(1)
+			go func(m *manager) {
+				defer wg.Done()
+				m.Run()
+			}(m)
+		}
+		wg.Wait()
 	}
 	return nil
 }

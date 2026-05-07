@@ -66,14 +66,14 @@ func (s *unixServer) handleConn(conn net.Conn) {
 
 	sc, err := codec.NewServer()
 	if err != nil {
-		log.Error("unix server: create codec failed", log.ErrWrap(err))
+		log.Error("unix-server: create codec failed", log.ErrWrap(err))
 		conn.Close()
 		return
 	}
 
 	srv, ok := sc.(codec.ServerHandler)
 	if !ok {
-		log.Error("unix server: codec does not implement ServerHandler")
+		log.Error("unix-server: codec does not implement ServerHandler")
 		conn.Close()
 		return
 	}
@@ -84,16 +84,16 @@ func (s *unixServer) handleConn(conn net.Conn) {
 			free, err = codec.Handle(srv, conn)
 			return err
 		}); err != nil {
-			log.Error("unix server: connection error", log.ErrWrap(err))
+			log.Error("unix-server: connection error", log.ErrWrap(err))
 			return
 		}
 	}
 
 	name := srv.GetClientName()
-	if name == "" {
-		log.Error("unix server: empty client name")
+	if len(name) == 0 {
+		log.Error("unix-server: empty client name")
 		return
 	}
-	log.Info("unix server: registry redis client", slog.String("name", name))
+	log.Info("unix-server: registry redis client", slog.String("name", name))
 	s.registry.Register(name, conn)
 }

@@ -16,6 +16,10 @@ const (
 	RWTimeout    = 15 * time.Second
 )
 
+const (
+	MaxClientConns = 12
+)
+
 func ReadConnTimeout(conn net.Conn, fn func() error) error {
 	if fn != nil {
 		conn.SetReadDeadline(time.Now().Add(ReadTimeout))
