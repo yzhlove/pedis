@@ -67,6 +67,22 @@ func ErrInvalidArguments(w io.Writer) (err error) {
 	return
 }
 
+func ErrHelloCmd(w io.Writer) error {
+	e := resp.GetError()
+	defer resp.FreeError(e)
+	e.Build("ERR unknown command `HELLO`, with args beginning with: `2`,")
+	_, err := w.Write(e.ToBytes())
+	return err
+}
+
+func ErrAuthParams(w io.Writer) error {
+	e := resp.GetError()
+	defer resp.FreeError(e)
+	e.Build("ERR wrong number of arguments for 'auth' command")
+	_, err := w.Write(e.ToBytes())
+	return err
+}
+
 func ErrWrap(w io.Writer, err error) error {
 	e := resp.GetError()
 	defer resp.FreeError(e)

@@ -1,14 +1,15 @@
 package helper
 
-import (
-	"io"
-	"net"
-)
+import "io"
 
 // Bridge copies data bidirectionally between a and b until either side closes.
-// Both connections are closed before returning. Returns the first non-nil error
+// Both sides are closed before returning. Returns the first non-nil error
 // encountered during copying, or nil.
-func Bridge(a, b net.Conn) error {
+//
+// The io.ReadWriteCloser signature lets callers pass net.Conn directly or
+// supply an aggregate type that combines a buffered reader, a synchronized
+// writer, and a separate closer.
+func Bridge(a, b io.ReadWriteCloser) error {
 	defer a.Close()
 	defer b.Close()
 

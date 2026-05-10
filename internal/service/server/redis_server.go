@@ -12,10 +12,24 @@ import (
 	"sync"
 
 	"github.com/yzhlove/pedis/internal/config"
+	"github.com/yzhlove/pedis/internal/helper"
 	"github.com/yzhlove/pedis/internal/log"
 	"github.com/yzhlove/pedis/internal/redis"
 	"github.com/yzhlove/pedis/internal/resp"
 )
+
+// clientSide aggregates the per-direction handles for the Redis-client end of
+// the bridge into a single io.ReadWriteCloser:
+//   - Read goes through the bufio.Reader so bytes already buffered by the
+//     handshake-time parser are not lost when the bridge starts.
+//   - Write goes through the lockedWriter so it does not race with AUTH-intercept
+//     replies from the filter goroutine.
+//   - Close closes the underlying client conn.
+type clientSide struct {
+	io.Reader
+	io.Writer
+	io.Closer
+}
 
 var (
 	errRedisData = errors.New("redis-server: data error")
@@ -65,14 +79,9 @@ func (s *redisServer) handleConn(conn net.Conn) {
 	defer conn.Close()
 
 	br := bufio.NewReader(conn)
-
-	name, helloFwd, err := s.waitForAuth(conn, br)
+	name, helloParams, err := s.waitForAuth(conn, br)
 	if err != nil {
-		log.Error("redis server: auth phase error", log.ErrWrap(err))
-		return
-	}
-	if len(name) == 0 {
-		log.Error("redis server: empty client name after auth")
+		log.Error("redis server: handshake error", log.ErrWrap(err))
 		return
 	}
 
@@ -82,111 +91,42 @@ func (s *redisServer) handleConn(conn net.Conn) {
 		_ = redis.ErrWrap(conn, fmt.Errorf("ERR no unix client connected for %s", name))
 		return
 	}
-	defer unixConn.Close()
 
-	// All writes to conn from now on must go through client to serialize the
-	// AUTH-intercept reply with the backend→client copy stream.
-	var writeMu sync.Mutex
-	client := &lockedWriter{mu: &writeMu, w: conn}
+	var mu sync.Mutex
+	lw := &lockedWriter{mu: &mu, w: conn}
 
-	if helloFwd != nil {
-		// HELLO case: forward the HELLO command (AUTH stripped) to the backend so
-		// it produces the protocol-correct response (RESP2 array or RESP3 map).
-		a := resp.GetArrBulk()
-		a.BuildArray(helloFwd)
-		_, werr := unixConn.Write(a.ToBytes())
-		resp.FreeArrBulk(a)
-		if werr != nil {
-			log.Error("redis server: forward HELLO failed", log.ErrWrap(werr))
+	if helloParams != nil {
+		// Forward the stripped HELLO to the backend before starting the bridge.
+		// io.Copy(lw, fc) will relay the HELLO Map response → client automatically.
+		ab := resp.GetArrBulk()
+		ab.BuildArray(helloParams)
+		bts := ab.ToBytes()
+		resp.FreeArrBulk(ab)
+		if _, err = unixConn.Write(bts); err != nil {
+			log.Error("redis server: hello forward error", log.ErrWrap(err))
+			unixConn.Close()
 			return
 		}
 	} else {
-		// AUTH case: pedis owns the handshake; reply +OK directly.
-		if err = redis.OK(client); err != nil {
-			log.Error("redis server: error writing ok to client", log.ErrWrap(err))
+		// AUTH handshake already complete; reply +OK now.
+		if err = redis.OK(lw); err != nil {
+			log.Error("redis server: ok reply error", log.ErrWrap(err))
+			unixConn.Close()
 			return
 		}
 	}
 
-	// Bridge: client → backend is RESP-aware (intercepts AUTH, strips AUTH from
-	// HELLO); backend → client is a raw copy. Both directions run concurrently;
-	// the first error tears down both sides.
-	errCh := make(chan error, 2)
-	go func() { errCh <- s.forwardFromClient(br, client, unixConn) }()
-	go func() {
-		_, err := io.Copy(client, unixConn)
-		errCh <- err
-	}()
-	err = <-errCh
-	conn.Close()
-	unixConn.Close()
-	if err != nil && !errors.Is(err, io.EOF) {
-		log.Error("redis server: bridge error", log.ErrWrap(err))
-	}
-	log.Info("redis server: bridge stopped", slog.String("name", name))
+	log.Info("redis server: bridge starting", slog.String("name", name))
+	fc := newFilteredConn(unixConn, lw)
+	err = helper.Bridge(fc, &clientSide{Reader: br, Writer: lw, Closer: conn})
+	log.Info("redis server: bridge stopped", slog.String("name", name), log.ErrWrap(err))
 }
 
-// forwardFromClient parses RESP commands from br and forwards them to backend.
-// It intercepts AUTH (replies +OK to client without forwarding) and strips the
-// AUTH u p triplet from HELLO before forwarding.
-func (s *redisServer) forwardFromClient(br *bufio.Reader, client io.Writer, backend net.Conn) error {
-	for {
-		var params []string
-		if err := resp.GetObject(br, func(obj resp.Object) error {
-			if obj.Type() != resp.ArrBulkType {
-				return errRedisData
-			}
-			src := obj.(*resp.ArrBulk).Get()
-			if len(src) == 0 {
-				return errRedisData
-			}
-			params = make([]string, len(src))
-			copy(params, src)
-			return nil
-		}); err != nil {
-			return err
-		}
-
-		switch strings.ToUpper(params[0]) {
-		case "AUTH":
-			if err := redis.OK(client); err != nil {
-				return err
-			}
-			continue
-		case "HELLO":
-			_, params, _ = parseHelloParams(params)
-		}
-
-		a := resp.GetArrBulk()
-		a.BuildArray(params)
-		_, werr := backend.Write(a.ToBytes())
-		resp.FreeArrBulk(a)
-		if werr != nil {
-			return werr
-		}
-	}
-}
-
-// lockedWriter serializes writes to an underlying writer behind a mutex, so
-// two goroutines can safely write without interleaving byte sequences.
-type lockedWriter struct {
-	mu *sync.Mutex
-	w  io.Writer
-}
-
-func (lw *lockedWriter) Write(p []byte) (int, error) {
-	lw.mu.Lock()
-	defer lw.mu.Unlock()
-	return lw.w.Write(p)
-}
-
-// waitForAuth loops reading RESP commands until a valid AUTH or HELLO-with-AUTH
-// arrives. Invalid or unsupported commands get a RESP error reply, then we wait
-// for the next command. Returns:
-//   - name:     the resolved client name / auth token.
-//   - helloFwd: nil for plain AUTH; for HELLO, the HELLO command with the
-//     "AUTH u p" triplet stripped, to be forwarded to the backend.
-func (s *redisServer) waitForAuth(conn net.Conn, br *bufio.Reader) (name string, helloFwd []string, err error) {
+// waitForAuth reads from br until it finds an AUTH or a HELLO-with-AUTH command.
+// Returns the client "name" (AUTH password) and, for HELLO, the stripped params
+// to forward to the backend. Sends RESP errors for unrecognised commands and
+// continues looping so the client can retry.
+func (s *redisServer) waitForAuth(conn net.Conn, br *bufio.Reader) (name string, helloParams []string, err error) {
 	for {
 		err = config.ReadConnTimeout(conn, func() error {
 			return resp.GetObject(br, func(obj resp.Object) error {
@@ -199,50 +139,31 @@ func (s *redisServer) waitForAuth(conn net.Conn, br *bufio.Reader) (name string,
 				}
 				switch strings.ToUpper(params[0]) {
 				case "AUTH":
-					if len(params) < 2 {
-						return redis.ErrInvalidArguments(conn)
+					switch len(params) {
+					case 2: // AUTH password
+						name = params[1]
+						return redis.OK(conn)
+					case 3: // AUTH username password
+						name = params[2]
+						return redis.OK(conn)
+					default:
+						return redis.ErrAuthParams(conn)
 					}
-					name = params[len(params)-1]
 				case "HELLO":
-					n, stripped, hasAuth := parseHelloParams(params)
-					if !hasAuth {
-						return redis.ErrNoAuth(conn)
+					n, stripped, ok := parseHelloParams(params)
+					if !ok {
+						return redis.ErrWrap(conn, fmt.Errorf("ERR HELLO requires AUTH"))
 					}
 					name = n
-					helloFwd = stripped
+					helloParams = stripped
+					return nil
 				default:
-					return redis.ErrNoAuth(conn)
+					return redis.ErrWrap(conn, fmt.Errorf("ERR unknown command %q", params[0]))
 				}
-				return nil
 			})
 		})
-		if err != nil {
-			return
-		}
-		if name != "" {
+		if err != nil || name != "" {
 			return
 		}
 	}
-}
-
-// parseHelloParams parses a HELLO command, extracting the password from any
-// embedded "AUTH <user> <pass>" triplet and returning the command with that
-// triplet removed (so the remaining HELLO can be forwarded to the backend
-// without leaking pedis-specific credentials).
-//
-// Grammar: HELLO [protover [AUTH username password] [SETNAME clientname]]
-func parseHelloParams(params []string) (name string, stripped []string, hasAuth bool) {
-	stripped = make([]string, 0, len(params))
-	stripped = append(stripped, params[0])
-	for i := 1; i < len(params); {
-		if i+2 < len(params) && strings.ToUpper(params[i]) == "AUTH" {
-			name = params[i+2]
-			hasAuth = true
-			i += 3
-			continue
-		}
-		stripped = append(stripped, params[i])
-		i++
-	}
-	return
 }

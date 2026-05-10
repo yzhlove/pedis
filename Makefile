@@ -91,13 +91,13 @@ network:
 	@docker network inspect $(Network) >/dev/null 2>&1 || \
 		(echo "Creating network $(Network)..." && docker network create $(Network))
 
-## start-s: Start server container (creates network if missing)
-start-s: network
+## server: Start server container (creates network if missing)
+server: network
 	@echo -e "\n🚀 Starting $(App)-server container..."
 	@docker run $(ServerCmd) $(App)
 
-## start-c: Start client container (creates network if missing)
-start-c: network
+## client: Start client container (creates network if missing)
+client: network
 	@echo -e "\n🚀 Starting $(App)-client container..."
 	@docker run $(ClientCmd) $(App)
 
@@ -134,4 +134,4 @@ help:
 	@echo "  Target Arch:  $(HostArch)"
 	@echo ""
 
-.PHONY: build build-local run test lint network start-s start-c stop clean proto help
+.PHONY: build build-local run test lint network server client stop clean proto help
