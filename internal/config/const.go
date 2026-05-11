@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	HeartbeatInterval = 2 * time.Minute
+	HeartbeatInterval = 30 * time.Second
 	TakeTimeout       = 30 * time.Second
 )
 
