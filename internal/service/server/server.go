@@ -2,75 +2,48 @@ package server
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/log"
-	"github.com/yzhlove/pedis/internal/service"
+	"go.uber.org/fx"
 )
 
-type serverService struct {
-	cfg      *config.Config
-	ctx      context.Context
-	cancel   context.CancelFunc
-	registry *Registry
-	unix     *unixServer
-	redis    *redisServer
-}
+// New constructs the unix/redis listeners (when configured as a server) and
+// registers their lifecycle on the fx App. Serve errors trigger an app-wide
+// shutdown via fx.Shutdowner so siblings stop cleanly.
+func New(lc fx.Lifecycle, sh fx.Shutdowner, cfg *config.Config) error {
+	if cfg.Role != config.ServerRole {
+		return nil
+	}
 
-// New creates a server Service for the given config.
-func New(cfg *config.Config) service.Service {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &serverService{
-		cfg:    cfg,
-		ctx:    ctx,
-		cancel: cancel,
-	}
-}
+	registry := newRegistry()
+	unix := newUnixServer(ctx, cfg, registry)
+	redis := newRedisServer(ctx, cfg, registry)
 
-func (s *serverService) isRunning() bool {
-	return s.cfg.Role == config.ServerRole
-}
+	serve := func(name string, fn func() error) {
+		if err := fn(); err != nil {
+			log.Error("server-service: serve failed",
+				log.ErrWrap(err), slog.String("listener", name))
+			_ = sh.Shutdown(fx.ExitCode(1))
+		}
+	}
 
-func (s *serverService) Init() error {
-	if !s.isRunning() {
-		return nil
-	}
-	s.registry = newRegistry()
-	s.unix = newUnixServer(s.ctx, s.cfg, s.registry)
-	s.redis = newRedisServer(s.ctx, s.cfg, s.registry)
-	return nil
-}
-
-func (s *serverService) Start() error {
-	if !s.isRunning() {
-		return nil
-	}
-	log.Info("server-service: server is starting")
-
-	errCh := make(chan error, 2)
-	go func() { errCh <- s.unix.serve() }()
-	go func() { errCh <- s.redis.serve() }()
-
-	select {
-	case <-s.ctx.Done():
-		return nil
-	case err := <-errCh:
-		return err
-	}
-}
-
-func (s *serverService) Stop() error {
-	if s.cancel != nil {
-		s.cancel()
-	}
-	if s.unix != nil {
-		s.unix.close()
-	}
-	if s.redis != nil {
-		s.redis.close()
-	}
-	if s.registry != nil {
-		s.registry.Close()
-	}
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			log.Info("server-service: server is starting")
+			go serve("unix", unix.serve)
+			go serve("redis", redis.serve)
+			return nil
+		},
+		OnStop: func(_ context.Context) error {
+			cancel()
+			unix.close()
+			redis.close()
+			registry.Close()
+			return nil
+		},
+	})
 	return nil
 }

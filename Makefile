@@ -7,9 +7,9 @@ Tags       := develop
 Dockerfile := Dockerfile
 Network    := mynet
 ServerPort := 6399
-UnixContainerDir := /tmp
-UnixLocalDir     := /tmp
-UnixSocket := $(UnixContainerDir)/pedis.sock
+DockerfileDir := /pedis/run
+HostMachineDir     := /Users/yostar/pedis
+UnixSocket := $(DockerfileDir)/pedis.sock
 Env        := dev
 ClientName := yurisa
 
@@ -36,7 +36,7 @@ ClientCmd := --rm=true -it \
 	-e PEDIS_CLI_REDIS_HOST=redis \
 	-e PEDIS_CLI_REDIS_PORT=6379 \
 	-e PEDIS_UNIX_SOCKET=$(UnixSocket) \
-	-v $(UnixContainerDir):$(UnixLocalDir)
+	-v $(HostMachineDir):$(DockerfileDir)
 
 ServerCmd := --rm=true -it \
 	--network=$(Network) \
@@ -48,7 +48,7 @@ ServerCmd := --rm=true -it \
 	-e PEDIS_SERVER_PORT=$(ServerPort) \
 	-e PEDIS_UNIX_SOCKET=$(UnixSocket) \
 	-p $(ServerPort):$(ServerPort) \
-	-v $(UnixContainerDir):$(UnixLocalDir)
+	-v $(HostMachineDir):$(DockerfileDir)
 
 # Build targets
 

@@ -38,7 +38,7 @@
 
 ```
 pedis/
-  main.go                    入口，dig 装配 service/module
+  main.go                    入口，fx 装配 service/module 并托管生命周期
   config.json                默认配置
   Makefile / Dockerfile      构建与容器编排
   proto/
@@ -176,7 +176,11 @@ make stop             # 关闭
 
 ### 模块初始化顺序
 
-`module.Module` 接口只有一个 `Apply() error`。`text`（name 编码本）和 `cipher`（身份密钥）是有状态单例，在 `main.go` 通过 `module.Apply(...)` 按依赖顺序初始化后再启动 service。
+`module.Module` 接口只有一个 `Apply() error`。`text`（name 编码本）和 `cipher`（身份密钥）是有状态单例，通过 fx 的 `group:"modules"` 收集后，由 `main.go` 中的 `fx.Invoke` 调用 `module.Apply(...)` 完成顺序初始化，随后才进入 service 构造与生命周期启动阶段。
+
+### 生命周期管理
+
+`internal/service/client` 与 `internal/service/server` 的 `New` 函数接收 `fx.Lifecycle`，在构造期间注册 `OnStart` / `OnStop` Hook：`OnStart` 用 goroutine 拉起 worker、`OnStop` 通过 `context.CancelFunc` 触发优雅退出。SIGINT/SIGTERM 由 `fx.App.Run()` 统一处理；server 端的 `serve()` 错误通过 `fx.Shutdowner` 反向通知应用整体关闭，从而保留"任一服务出错则全员停止"的语义。
 
 ## 开发常用命令
 
@@ -199,5 +203,5 @@ go vet ./...
 
 - [`github.com/bytedance/gopkg`](https://github.com/bytedance/gopkg) — `mcache` 缓冲池
 - [`github.com/jinzhu/configor`](https://github.com/jinzhu/configor) — JSON / 环境变量配置
-- [`go.uber.org/dig`](https://pkg.go.dev/go.uber.org/dig) — 依赖注入
+- [`go.uber.org/fx`](https://pkg.go.dev/go.uber.org/fx) — 依赖注入与应用生命周期
 - [`google.golang.org/protobuf`](https://pkg.go.dev/google.golang.org/protobuf) — 握手 / 心跳消息

@@ -8,11 +8,11 @@ import (
 	"github.com/yzhlove/pedis/internal/config"
 	"github.com/yzhlove/pedis/internal/log"
 	"github.com/yzhlove/pedis/internal/module"
-	"github.com/yzhlove/pedis/internal/service"
 	"github.com/yzhlove/pedis/internal/service/client"
 	"github.com/yzhlove/pedis/internal/service/server"
 	"github.com/yzhlove/pedis/internal/text"
-	"go.uber.org/dig"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 )
 
 var (
@@ -22,31 +22,42 @@ var (
 )
 
 func main() {
-	type in struct {
-		dig.In
-		Config   *config.Config
-		Services []service.Service `group:"services"`
-		Modules  []module.Module   `group:"modules"`
-	}
+	app := fx.New(
+		fx.Provide(
+			config.New,
+			fx.Annotate(cipher.New, fx.ResultTags(`group:"modules"`)),
+			fx.Annotate(text.New, fx.ResultTags(`group:"modules"`)),
+		),
+		fx.WithLogger(func(cfg *config.Config) fxevent.Logger {
+			log.Init(cfg, slog.Attr{Key: "app", Value: slog.StringValue("pedis")})
+			if cfg.ENV == "production" {
+				return fxevent.NopLogger
+			}
+			l := &fxevent.SlogLogger{Logger: log.Get()}
+			l.UseErrorLevel(slog.LevelError)
+			return l
+		}),
+		fx.Invoke(func() {
+			log.Info("app start",
+				slog.String("build_date", buildDate),
+				slog.String("go_version", goVersion),
+				slog.String("app_version", appVersion))
+		}),
+		fx.Invoke(func(in struct {
+			fx.In
+			Modules []module.Module `group:"modules"`
+		}) error {
+			if err := module.Apply(in.Modules...); err != nil {
+				return fmt.Errorf("module: apply error: %v", err)
+			}
+			return nil
+		}),
+		fx.Invoke(client.New, server.New),
+	)
 
-	container := dig.New()
-	container.Provide(config.New)
-	container.Provide(client.New, dig.Group("services"))
-	container.Provide(server.New, dig.Group("services"))
-	container.Provide(text.New, dig.Group("modules"))
-	container.Provide(cipher.New, dig.Group("modules"))
-
-	if err := container.Invoke(func(i in) error {
-		log.Init(i.Config, slog.Attr{Key: "app", Value: slog.StringValue("pedis")})
-		log.Info("app start",
-			slog.String("build_date", buildDate),
-			slog.String("go_version", goVersion),
-			slog.String("app_version", appVersion))
-		if err := module.Apply(i.Modules...); err != nil {
-			return fmt.Errorf("module: apply error: %v", err)
-		}
-		return service.Run(i.Services...)
-	}); err != nil {
+	if err := app.Err(); err != nil {
 		log.Error("app start failed", log.ErrWrap(err))
+		return
 	}
+	app.Run()
 }

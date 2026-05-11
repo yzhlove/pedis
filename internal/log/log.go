@@ -47,6 +47,10 @@ func init() {
 	initLog(nil)
 }
 
+func Get() *slog.Logger {
+	return logger
+}
+
 func Init(cfg *config.Config, attrs ...slog.Attr) {
 	var h slog.Handler
 	switch cfg.ENV {

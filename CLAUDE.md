@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 go build ./...
 
 # Run
-go run cmd/pedis/main.go
+go run .
 
 # Test
 go test ./...
@@ -36,7 +36,7 @@ Go module: `github.com/yzhlove/pedis`
 
 ```
 pedis/
-  cmd/pedis/          — main entry point (DI wiring only)
+  main.go             — entry point (fx DI + lifecycle wiring)
   internal/
     config/           — Config struct, loaded from config.json or env vars
     cipher/           — AES-256-GCM session + X25519 identity (modules.Module)
@@ -48,8 +48,9 @@ pedis/
     packet/           — 2-byte length-prefixed framing (Pack / Unpack)
     redis/            — Redis standard commands (PING)
     resp/             — RESP protocol: 5 types (Status/Error/Integer/Bulk/ArrBulk)
-    service/          — Service interface + Run() lifecycle manager
+    service/
       client/         — State-machine client: worker, manager, bridge
+      server/         — Listeners + registry; registers fx.Lifecycle hooks
     text/             — uint64 ↔ 13-char string encoding (book cipher)
   proto/
     msg.proto         — Protobuf source (snake_case fields)
@@ -85,11 +86,17 @@ Event-driven state machine managing two concurrent workers (unix + redis). State
 - `identity.go` — X25519 long-term key pair, loaded from config (base32-encoded). Exposes `GetPubKey()` / `GetPrivKey()` / `GenerateKey()`.
 - `session.go` — AES-256-GCM `Session` with monotonic counter nonce.
 
+### `internal/service/server`
+Constructor `server.New(lc fx.Lifecycle, sh fx.Shutdowner, cfg *Config) error` registers `OnStart` / `OnStop` hooks for the unix and redis listeners. A serve-loop error triggers `sh.Shutdown(...)` so the whole fx app tears down cleanly (preserves the legacy "any service fails → all stop" semantic).
+
+### `internal/service/client`
+Constructor `client.New(lc fx.Lifecycle, cfg *Config) error` builds N managers and registers a single `OnStart` hook that fans them out into goroutines, plus an `OnStop` that cancels the shared context and waits for them to finish.
+
 ### `internal/text`
-Encodes `uint64` to a 13-character obfuscated string using a seed-derived book cipher. `Encode(val)` / `Decode(s)` are the public API. Requires `New(cfg).Apply()` to be called first (done via DI in `cmd/pedis/main.go`).
+Encodes `uint64` to a 13-character obfuscated string using a seed-derived book cipher. `Encode(val)` / `Decode(s)` are the public API. Requires `New(cfg).Apply()` to be called first (done via fx in `main.go`, ordered before any service constructor runs).
 
 ### `internal/module`
-Minimal `Module` interface with a single `Apply() error` method. Used for ordered initialization of stateful singletons (`cipher`, `text`) via `module.Apply(...)`.
+Minimal `Module` interface with a single `Apply() error` method. Used for ordered initialization of stateful singletons (`cipher`, `text`). They are provided into the `group:"modules"` fx group and applied via a dedicated `fx.Invoke` before any service constructor runs.
 
 ### `internal/helper`
 Buffer pool using `bytedance/gopkg/lang/mcache`. Always use `Get1KBBytes()` / `FreeBytes()` for temporary byte buffers instead of `make([]byte, ...)`.
@@ -100,7 +107,7 @@ Buffer pool using `bytedance/gopkg/lang/mcache`. Always use `Get1KBBytes()` / `F
 |---------|---------|
 | `github.com/bytedance/gopkg` | `mcache` buffer pool to reduce GC pressure |
 | `github.com/jinzhu/configor` | Config loading from JSON / env vars |
-| `go.uber.org/dig` | Dependency injection container |
+| `go.uber.org/fx` | DI container + application lifecycle (signal handling, ordered start/stop) |
 | `google.golang.org/protobuf` | Protobuf serialization for auth/heartbeat messages |
 
 ## Conventions
