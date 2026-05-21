@@ -17,7 +17,7 @@ const (
 )
 
 const (
-	MaxClientConns = 5
+	MaxClientConns = 16
 )
 
 func ReadConnTimeout(conn net.Conn, fn func() error) error {
